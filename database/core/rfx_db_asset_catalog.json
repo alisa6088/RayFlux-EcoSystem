@@ -58,5 +58,59 @@
     ],
     "sha256": "b3cee1892b4fcf9f1b3db5000a5e0ea5e15d3c29f2bd4ec551a51e351535c695",
     "updated_at": "2026-11-18T16:35:17.184440"
+  },
+  "s02_usable_rooftops": {
+    "kind": "vector",
+    "postgis_table": "public.s02_usable_rooftops",
+    "postgis_synced": true,
+    "shapefile": "database/shapefiles/s02_vision/rfx_s02_vec_usable_rooftops.shp",
+    "gpkg_layer": "s02_usable_rooftops",
+    "excel": "database/tables/s02_vision/rfx_s02_tbl_usable_area_report.xlsx",
+    "feature_count": 3962,
+    "crs": "EPSG:32639",
+    "bounds": [
+      433145.3934219119,
+      3949758.450245611,
+      439881.3795846554,
+      3953800.429052514
+    ],
+    "sha256": "c45cca76837de13be0d6fcac054db4f315cd27446ecbfce7e707069dbe1c0847",
+    "updated_at": "2026-11-19T15:42:29.009118"
+  },
+  "s02_physical_obstacles": {
+    "kind": "vector",
+    "postgis_table": "public.s02_physical_obstacles",
+    "postgis_synced": true,
+    "shapefile": "database/shapefiles/s02_vision/rfx_s02_vec_physical_obstacles.shp",
+    "gpkg_layer": "s02_physical_obstacles",
+    "excel": null,
+    "feature_count": 16410,
+    "crs": "EPSG:32639",
+    "bounds": [
+      433158.4962079874,
+      3949801.2957263677,
+      439856.1935250219,
+      3953798.1991911433
+    ],
+    "sha256": "401c40365bd83ab641f85d2d9715e129b69e44de2b6c7906c0bc936edf7e2acd",
+    "updated_at": "2026-11-19T15:42:37.048288"
+  },
+  "s02_cast_shadows": {
+    "kind": "vector",
+    "postgis_table": "public.s02_cast_shadows",
+    "postgis_synced": true,
+    "shapefile": "database/shapefiles/s02_vision/rfx_s02_vec_cast_shadows.shp",
+    "gpkg_layer": "s02_cast_shadows",
+    "excel": null,
+    "feature_count": 10930,
+    "crs": "EPSG:32639",
+    "bounds": [
+      433164.7974140318,
+      3949764.4579064157,
+      439877.0359757841,
+      3953799.168607458
+    ],
+    "sha256": "fa1c911827e03f62d6977b5bb154aa54f6e55b15afe99bf29523843b09f7b689",
+    "updated_at": "2026-11-19T15:42:44.182676"
   }
 }

@@ -176,12 +176,11 @@ class CentralDatabaseManager:
         shp_path.parent.mkdir(parents=True, exist_ok=True)
         gdf_shp.to_file(shp_path, driver="ESRI Shapefile", encoding="utf-8")
 
-        # 4. Commit Tabular Excel (.xlsx) & CSV (.csv)
+        # 4. Commit Tabular Excel (.xlsx)
         if excel_path is not None:
             excel_path.parent.mkdir(parents=True, exist_ok=True)
             df_tab = pd.DataFrame(gdf.drop(columns=["geometry"], errors="ignore"))
             df_tab.to_excel(excel_path, index=False, engine="openpyxl")
-            df_tab.to_csv(excel_path.with_suffix(".csv"), index=False, encoding="utf-8")
 
         self._update_catalog(
             gpkg_layer,

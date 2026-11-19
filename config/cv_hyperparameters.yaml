@@ -1,43 +1,71 @@
 # ==============================================================================
-# RayFlux Section 2: Multi-Modal Rooftop Object Detection Hyperparameters
+# RAYFLUX SECTION 2 — ROOFTOP OBJECT DETECTION MASTER HYPERPARAMETERS (V3)
+# ==============================================================================
+# Controls all deterministic multi-modal vision models, thresholds, OBIA filters,
+# and semantic classification rules. Tune these parameters for different urban
+# fabrics (dense residential vs. large industrial sheds) and imagery resolutions.
 # ==============================================================================
 
+cropping:
+  pad_meters: 4.0                     # Spatial padding around each building crop window (m)
+
 chromaticity:
-  cyan_index_thresh: 0.04
-  bright_metal_percentile: 88.0
-  min_cooler_saturation: 0.08
+  enabled: true
+  cyan_index_thresh: 0.14             # (B - R) / (B + R + eps) threshold for localized cyan/turquoise coolers
+  cyan_min_blue: 95                   # Minimum blue channel reflectance threshold
+  max_cyan_roof_fraction: 0.25        # Guard: if >25% of a roof is cyan, it is a blue-painted shed roof, not a cooler
+  max_cyan_component_pixels: 40       # Guard: single cyan blob >40 px (~9.4 m²) is a painted roof panel, not a cooler
+  lum_object_min: 80.0                # Minimum luminance for physical object chassis
+  lum_object_max: 225.0               # Maximum luminance to avoid sunlit flat roof glare
 
-glcm_texture:
-  window_size: 5
-  quantization_levels: 32
-  distance: 1
-  angles_deg: [0, 45, 90, 135]
-  contrast_obj_thresh: 20.0
-  homogeneity_shadow_thresh: 0.65
+glcm:
+  enabled: true
+  window_size: 5                      # 5x5 px sliding window
+  levels: 32                          # Quantization levels for vectorized GLCM
+  contrast_obj_thresh: 26.0           # Minimum GLCM contrast for textured rooftop equipment
+  contrast_shadow_max: 20.0           # Maximum GLCM contrast for uniform cast shadows
+  homogeneity_shadow_min: 0.10        # Minimum GLCM homogeneity for flat cast shadows
 
-gabor_bank:
-  orientations_deg: [0, 45, 90, 135]
-  wavelength_px: 4.0
-  sigma_px: 2.0
-  spatial_aspect_ratio: 0.5
-  energy_percentile_thresh: 80.0
+gabor:
+  enabled: true
+  frequency: 0.25                     # Spatial frequency (wavelength = 4 px)
+  angles:
+    - 0.0                             # 0 deg
+    - 0.785398                        # 45 deg
+    - 1.570796                        # 90 deg
+    - 2.356194                        # 135 deg
+  energy_obj_thresh: 5.5              # Structural boundary energy threshold
 
 morphology:
-  tophat_disk_radius_px: 5
-  blackhat_disk_radius_px: 4
-  closing_kernel_px: 3
-  opening_kernel_px: 2
+  enabled: true
+  kernel_size: 3                      # 3x3 structuring element
+  tophat_thresh: 32                   # White Top-Hat threshold for bright specular vent caps
+  blackhat_thresh: 32                 # Black-Hat threshold for dark chimney/flue openings
+  gradient_thresh: 24                 # Morphological gradient threshold for sharp structural edges
 
-shadow_disambiguation:
-  relative_lum_low_ratio: 0.62
-  relative_lum_high_ratio: 0.75
-  max_shadow_glcm_contrast: 16.0
-  min_shadow_homogeneity: 0.60
+shadow:
+  enabled: true
+  lum_shadow_max: 85.0                # Maximum average luminance for cast shadows
+  max_channel_shadow_max: 110.0       # Maximum HSV Value max(R,G,B) — blocks saturated colored roofs
+  relative_v_ratio: 0.68              # Pixel V must be < 68% of the roof's own 75th-percentile sunlit V (blocks gable shading)
+  contrast_shadow_max: 20.0           # Maximum GLCM contrast in cast shadows
+  homogeneity_shadow_min: 0.10        # Minimum GLCM homogeneity in cast shadows
+  gabor_energy_max: 5.0               # Maximum Gabor energy allowed in cast shadows
+  shadow_halo_dilation_px: 1          # 1-px dilation around cast shadows to suppress bright-to-dark shadow-edge halos
+  min_shadow_area_m2: 0.50            # Minimum valid shadow patch area (m²)
 
-obia_geometry:
-  min_obstacle_area_m2: 0.20
-  max_obstacle_roof_fraction: 0.45
-  min_usable_patch_area_m2: 2.00
-  penthouse_min_area_m2: 6.00
-  cooler_max_area_m2: 6.00
-  chimney_max_area_m2: 1.20
+obia:
+  mask_outside_roof_fill: true        # Fill off-roof pixels with roof median gray before GLCM/Gabor/Morph to stop edge bleed
+  roof_border_erosion_px: 2           # 2-px (~1.0 m) perimeter eave/parapet setback against footprint-to-imagery offset
+  morph_close_kernel_size: 3          # Morphological closing kernel to bridge split chassis
+  min_connected_pixels: 4             # Rejects 1-3 px seam/compression speckles (< ~0.94 m² at 0.48m/px)
+  min_physical_object_area_m2: 0.90   # Minimum real-world area for valid physical obstacle (m²)
+
+semantic:
+  penthouse_min_area_m2: 10.0         # Structures >= 10.0 m² are PENTHOUSE / BULKHEAD
+  cooler_min_area_m2: 1.00            # 1.0 to 10.0 m² are COOLER_AC / HVAC
+                                      # Structures < 1.0 m² are CHIMNEY_VENT
+
+usable_area:
+  min_usable_patch_area_m2: 2.00      # Minimum contiguous usable clear space (m²)
+  polygon_simplify_tol_m: 0.15        # Douglas-Peucker simplification tolerance in meters
