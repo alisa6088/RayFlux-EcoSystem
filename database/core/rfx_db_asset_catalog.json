@@ -1,0 +1,62 @@
+{
+  "s01_building_footprints": {
+    "kind": "vector",
+    "postgis_table": "public.s01_building_footprints",
+    "postgis_synced": true,
+    "shapefile": "database/shapefiles/s01_base/rfx_s01_vec_building_footprints.shp",
+    "gpkg_layer": "s01_building_footprints",
+    "excel": "database/tables/s01_base/rfx_s01_tbl_building_inventory.xlsx",
+    "feature_count": 3962,
+    "crs": "EPSG:32639",
+    "bounds": [
+      433145.3934219119,
+      3949758.450245611,
+      439881.3795846554,
+      3953800.429052514
+    ],
+    "sha256": "31886d94251bec04792f04e9f34944f41ef4e4d7d203608764f34f18028e0e7d",
+    "updated_at": "2026-11-18T16:35:12.182799"
+  },
+  "s01_synthetic_dsm": {
+    "kind": "raster",
+    "path": "database/rasters/s01_base/rfx_s01_ras_synthetic_dsm.tif",
+    "width": 13486,
+    "height": 8274,
+    "bands": 1,
+    "dtype": "float32",
+    "crs": "EPSG:32639",
+    "resolution": [
+      0.5,
+      0.5
+    ],
+    "bounds": [
+      433130.3953,
+      3949665.017999999,
+      439873.3953,
+      3953802.017999999
+    ],
+    "sha256": "7bc7048ac65a9a802bb0082669363944c826220edbe35311a5e980b8e9f59d79",
+    "updated_at": "2026-11-18T16:35:12.656998"
+  },
+  "s01_ortho_rgb": {
+    "kind": "raster",
+    "path": "database/rasters/s01_base/rfx_s01_ras_ortho_rgb.tif",
+    "width": 14415,
+    "height": 8778,
+    "bands": 3,
+    "dtype": "uint8",
+    "crs": "EPSG:32639",
+    "resolution": [
+      0.4847081572611441,
+      0.4847081572611441
+    ],
+    "bounds": [
+      433016.96142606717,
+      3949605.9583389913,
+      440004.02951298654,
+      3953860.72654343
+    ],
+    "sha256": "b3cee1892b4fcf9f1b3db5000a5e0ea5e15d3c29f2bd4ec551a51e351535c695",
+    "updated_at": "2026-11-18T16:35:17.184440"
+  }
+}

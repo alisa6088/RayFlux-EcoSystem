@@ -1,0 +1,51 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment secrets & local credentials
+.env
+database/core/rfx_db_postgis_credentials.json
+
+# Numba cache
+*.nbc
+*.nbi
+
+# Live PostgreSQL/PostGIS database cluster & logs
+database/postgis_cluster/
+database/core/*.log
+logs/*.log
+
+# Heavy geospatial binary datasets & caches (keep directory structure)
+database/core/*.gpkg
+database/core/*.tmp
+database/cache/
+database/rasters/**/*.tif
+database/rasters/**/*.ovr
+database/shapefiles/**/*.shp
+database/shapefiles/**/*.shx
+database/shapefiles/**/*.dbf
+database/shapefiles/**/*.prj
+database/shapefiles/**/*.cpg
+database/shapefiles/**/*.sbn
+database/shapefiles/**/*.sbx
+database/tables/**/*.xlsx
+database/tables/**/*.csv
+database/maps/**/*.png
+
+# Case study input GIS binaries (user-supplied per run)
+data/case_study_aoi/*.shp
+data/case_study_aoi/*.shx
+data/case_study_aoi/*.dbf
+data/case_study_aoi/*.prj
+data/case_study_aoi/*.cpg
+data/case_study_aoi/*.sbn
+data/case_study_aoi/*.sbx
+data/case_study_aoi/*.geojson
+data/case_study_aoi/*.gpkg
