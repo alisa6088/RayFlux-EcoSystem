@@ -1,0 +1,42 @@
+# ==============================================================================
+# RAYFLUX SECTION 3 — SOLAR PHYSICS, PV YIELD & HOTSPOT MASTER PARAMETERS
+# ==============================================================================
+# Based on Solar-PV-Potential-Estimation (v01–v05) with UTC calendar alignment,
+# pvlib Haurwitz clear-sky irradiance, exact Section 2 usable rooftop integration,
+# and memory-safe Numba tile-streamed 32-direction horizon ray-marching.
+# ==============================================================================
+
+solar_geometry:
+  year: 2024
+  timezone: "UTC"                     # Universal UTC calendar prevents sample-day split across midnight
+  day_interval: 14                    # Sample every 14th day of year (26 complete 24-hour days)
+  hour_interval: 0.5                  # 30-minute temporal resolution (48 steps/day)
+  altitude_m: 1200.0                  # Physical site elevation above sea level (m) for atmospheric refraction
+  clear_sky_model: "haurwitz"         # "haurwitz" (pvlib.clearsky.haurwitz) or "constant"
+  atmospheric_clearness_kt: 1.00      # Optional regional cloudiness attenuation factor (1.0 = clear-sky)
+  diffuse_fraction: 0.20              # Fraction of GHI treated as isotropic sky-view diffuse irradiance
+
+horizon:
+  n_directions: 32                    # Azimuthal horizon sectors (11.25 deg spacing)
+  max_distance_m: 500.0               # Maximum ray-marching search radius (m)
+  step_size_m: 1.0                    # Ray-marching bilinear step size (m)
+  rooftop_only_mask: true             # Compute horizon/irradiance on rooftop pixels while ray-marching full DSM
+  tile_size: 512                      # Tile size (px) for low-RAM streaming execution
+
+suitability:
+  min_annual_rad_kwhm2: 400.0         # Minimum annual solar irradiance threshold (kWh/m²/yr)
+
+pv_system:
+  pv_efficiency: 0.20                 # Modern commercial PV module efficiency (20%)
+  performance_ratio: 0.86             # System performance ratio accounting for inverter/thermal/wiring losses (86%)
+  use_section2_usable_polygons: true  # Use exact Section 2 obstacle-free usable rooftops (falls back to 70% if absent)
+  fallback_usable_ratio: 0.70         # Fallback flat-roof usable ratio when running Section 3 without Section 2
+
+hotspots:
+  k_neighbors: 10                     # Adaptive Gaussian kernel bandwidth (nearest neighbors)
+  weights_type: "gaussian_kernel"     # "gaussian_kernel" (continuous distance decay, self=1.0) or "knn_binary"
+  value_transform: "sqrt"             # "sqrt" (balances right-skew while preserving size dominance), "raw", or "log1p"
+  star: true                          # True Getis-Ord Gi* (INCLUDES building i itself; false = Gi excluding self)
+  p_value_method: "analytical"        # "analytical" (exact Ord & Getis 1995 two-tailed Z-test, matches ArcGIS Pro)
+  permutations: 999                   # Used only if p_value_method == "permutation"
+  random_seed: 42                     # Deterministic seed for reproducibility

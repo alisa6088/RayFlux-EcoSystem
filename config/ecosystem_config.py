@@ -138,6 +138,7 @@ class EcosystemConfig:
     cv_hyperparams_yaml: Path = PROJECT_ROOT / "config" / "cv_hyperparameters.yaml"
 
     # Section 3 Parameters (Solar Physics & Spatial Hotspots)
+    solar_params_yaml: Path = PROJECT_ROOT / "config" / "solar_parameters.yaml"
     timezone: str = "UTC"
     year: int = 2024
     altitude_m: float = 1200.0
