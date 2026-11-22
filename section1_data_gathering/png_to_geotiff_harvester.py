@@ -37,25 +37,34 @@ ESRI_HEADERS = {
 def detect_best_esri_zoom(
     bbox_wgs84: Tuple[float, float, float, float],
     preferred_zoom: int = 19,
-    min_zoom: int = 16,
+    min_zoom: int = 18,
 ) -> int:
-    """Probes the center tile of the AOI to find the highest zoom level where Esri World Imagery
-    serves real high-resolution imagery rather than a flat gray 'Map data not yet available' tile."""
+    """Probes sample tiles (25%, center, 75%) across the AOI: selects Zoom 19 whenever real
+    high-resolution imagery exists across the AOI, otherwise cleanly uses Zoom 18."""
     west, south, east, north = bbox_wgs84
     for z in range(preferred_zoom, min_zoom - 1, -1):
         tiles = list(mercantile.tiles(west, south, east, north, z))
         if not tiles:
             continue
-        mid_tile = tiles[len(tiles) // 2]
-        url = ESRI_WORLD_IMAGERY_TPL.format(z=mid_tile.z, y=mid_tile.y, x=mid_tile.x)
-        try:
-            resp = requests.get(url, headers=ESRI_HEADERS, timeout=10)
-            if resp.status_code == 200 and len(resp.content) > 3500:
+        sample_indices = sorted(set([len(tiles) // 4, len(tiles) // 2, (3 * len(tiles)) // 4]))
+        all_valid = True
+        for idx in sample_indices:
+            t = tiles[min(idx, len(tiles) - 1)]
+            url = ESRI_WORLD_IMAGERY_TPL.format(z=t.z, y=t.y, x=t.x)
+            try:
+                resp = requests.get(url, headers=ESRI_HEADERS, timeout=10)
+                if resp.status_code != 200 or len(resp.content) <= 3500:
+                    all_valid = False
+                    break
                 arr = np.array(Image.open(BytesIO(resp.content)).convert("RGB"))
-                if float(arr.std()) >= 8.0:
-                    return z
-        except Exception:
-            continue
+                if float(arr.std()) < 8.0:
+                    all_valid = False
+                    break
+            except Exception:
+                all_valid = False
+                break
+        if all_valid:
+            return z
     return 18
 
 

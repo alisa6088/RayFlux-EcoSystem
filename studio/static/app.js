@@ -546,8 +546,8 @@ async function saveNewArea(runImmediately = false) {
   const files = document.getElementById("newAreaFiles").files;
   const areaTypes = getCheckedValues("mapAreaTypeChecks");
   const traits = getCheckedValues("mapTraitChecks");
-  const gsd = Number(document.getElementById("newAreaGsd").value || 0.45);
-  const dsmRes = Number(document.getElementById("newAreaDsmRes").value || 0.50);
+  const gsd = 0.48;
+  const dsmRes = 0.50;
 
   let createdArea = null;
   try {
