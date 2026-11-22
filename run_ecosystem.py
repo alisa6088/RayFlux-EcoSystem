@@ -101,6 +101,36 @@ def main() -> int:
         help="Override Case Study AOI: path to .shp/.geojson/.gpkg or 'west,south,east,north' WGS84 bbox.",
     )
     parser.add_argument(
+        "--area-id",
+        type=str,
+        default=None,
+        help="Registered Area ID from database/core/rfx_areas_registry.json (isolates PostGIS schema & DB folder).",
+    )
+    parser.add_argument(
+        "--cv-profile",
+        type=str,
+        default=None,
+        help="CV profile ID in config/profiles/ or path to a custom cv_hyperparameters.yaml.",
+    )
+    parser.add_argument(
+        "--solar-config",
+        type=str,
+        default=None,
+        help="Path to a custom solar_parameters.yaml.",
+    )
+    parser.add_argument(
+        "--dsm-res",
+        type=float,
+        default=None,
+        help="Override Synthetic DSM pixel resolution in meters (default: 0.50).",
+    )
+    parser.add_argument(
+        "--min-area",
+        type=float,
+        default=None,
+        help="Override minimum building footprint area in m² (default: 50.0).",
+    )
+    parser.add_argument(
         "--workers",
         type=int,
         default=None,
@@ -118,9 +148,24 @@ def main() -> int:
     )
 
     args = parser.parse_args()
-    cfg = EcosystemConfig()
+    if args.area_id:
+        from studio.area_registry import area_registry
+        cfg = area_registry.build_ecosystem_config(args.area_id)
+    else:
+        cfg = EcosystemConfig()
+
     if args.aoi:
         cfg.aoi_source = _parse_aoi_arg(args.aoi)
+    if args.cv_profile:
+        from studio.cv_profile_engine import resolve_profile_path
+        cfg.cv_hyperparams_yaml = resolve_profile_path(args.cv_profile)
+    if args.solar_config:
+        p = Path(args.solar_config)
+        cfg.solar_params_yaml = p if p.is_absolute() else (PROJECT_ROOT / p).resolve()
+    if args.dsm_res is not None:
+        cfg.dsm_resolution_m = float(args.dsm_res)
+    if args.min_area is not None:
+        cfg.min_building_area_m2 = float(args.min_area)
 
     if args.status or (not args.all and not args.section):
         print_ecosystem_status(cfg)

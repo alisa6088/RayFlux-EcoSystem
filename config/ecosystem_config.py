@@ -95,6 +95,41 @@ class DatabasePaths:
         """Returns standardized path for per-building diagnostic card PNG."""
         return self.s02_cards_dir / f"rfx_s02_img_roof_diag_bldg_{building_id:04d}.png"
 
+    @classmethod
+    def from_root(cls, root_dir: Path) -> "DatabasePaths":
+        """Creates an isolated DatabasePaths store rooted at `root_dir` (for multi-area management)."""
+        r = Path(root_dir)
+        return cls(
+            master_gpkg=r / "core" / "rfx_db_master_geodatabase.gpkg",
+            catalog_json=r / "core" / "rfx_db_asset_catalog.json",
+            audit_log=r / "core" / "rfx_db_transaction_audit.log",
+            tile_cache_dir=r / "cache" / "s01_tiles",
+            s01_ortho_tif=r / "rasters" / "s01_base" / "rfx_s01_ras_ortho_rgb.tif",
+            s01_synthetic_dsm_tif=r / "rasters" / "s01_base" / "rfx_s01_ras_synthetic_dsm.tif",
+            s01_footprints_shp=r / "shapefiles" / "s01_base" / "rfx_s01_vec_building_footprints.shp",
+            s01_inventory_xlsx=r / "tables" / "s01_base" / "rfx_s01_tbl_building_inventory.xlsx",
+            s01_overview_map_png=r / "maps" / "s01_base" / "rfx_s01_img_base_overview_map.png",
+            s02_usable_rooftops_shp=r / "shapefiles" / "s02_vision" / "rfx_s02_vec_usable_rooftops.shp",
+            s02_obstacles_shp=r / "shapefiles" / "s02_vision" / "rfx_s02_vec_physical_obstacles.shp",
+            s02_shadows_shp=r / "shapefiles" / "s02_vision" / "rfx_s02_vec_cast_shadows.shp",
+            s02_usable_report_xlsx=r / "tables" / "s02_vision" / "rfx_s02_tbl_usable_area_report.xlsx",
+            s02_scene_map_png=r / "maps" / "s02_vision" / "rfx_s02_img_scene_detection_map.png",
+            s02_cards_dir=r / "maps" / "s02_vision" / "cards",
+            s03_solar_geom_csv=r / "tables" / "s03_solar" / "rfx_s03_tbl_solar_geometry.csv",
+            s03_horizon_tif=r / "rasters" / "s03_solar" / "rfx_s03_ras_horizon_angles_32dir.tif",
+            s03_svf_tif=r / "rasters" / "s03_solar" / "rfx_s03_ras_sky_view_factor.tif",
+            s03_annual_rad_tif=r / "rasters" / "s03_solar" / "rfx_s03_ras_irradiance_annual.tif",
+            s03_shadow_frac_tif=r / "rasters" / "s03_solar" / "rfx_s03_ras_shadow_fraction_annual.tif",
+            s03_suitability_tif=r / "rasters" / "s03_solar" / "rfx_s03_ras_suitability_mask.tif",
+            s03_monthly_rad_dir=r / "rasters" / "s03_solar" / "monthly",
+            s03_zonal_stats_shp=r / "shapefiles" / "s03_solar" / "rfx_s03_vec_solar_zonal_stats.shp",
+            s03_hotspots_final_shp=r / "shapefiles" / "s03_solar" / "rfx_s03_vec_solar_hotspots_final.shp",
+            s03_solar_final_xlsx=r / "tables" / "s03_solar" / "rfx_s03_tbl_solar_potential_final.xlsx",
+            s03_rad_heatmap_png=r / "maps" / "s03_solar" / "rfx_s03_img_irradiance_heatmap.png",
+            s03_hotspots_map_png=r / "maps" / "s03_solar" / "rfx_s03_img_hotspots_cluster_map.png",
+            s03_energy_dist_png=r / "maps" / "s03_solar" / "rfx_s03_img_energy_distribution.png",
+        )
+
     def ensure_directories(self) -> None:
         """Creates all required input data, database, and log directories on disk."""
         DATA_INPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -167,3 +202,31 @@ class EcosystemConfig:
         if self.target_crs is None:
             self.target_crs = resolved.target_crs
         return resolved
+
+    @classmethod
+    def for_area(
+        cls,
+        aoi_source: Union[Path, str, Tuple[float, float, float, float]],
+        db_root: Path,
+        postgis_schema: str = "public",
+        target_crs: Optional[str] = None,
+        cv_yaml: Optional[Path] = None,
+        solar_yaml: Optional[Path] = None,
+        dsm_resolution_m: float = 0.50,
+        min_building_area_m2: float = 50.0,
+    ) -> "EcosystemConfig":
+        """Constructs an isolated EcosystemConfig for a specific registered area."""
+        pg = PostGISConfig(schema=postgis_schema)
+        db_paths = DatabasePaths.from_root(db_root)
+        cfg = cls(
+            aoi_source=aoi_source,
+            target_crs=target_crs,
+            dsm_resolution_m=dsm_resolution_m,
+            min_building_area_m2=min_building_area_m2,
+            cv_hyperparams_yaml=cv_yaml or (PROJECT_ROOT / "config" / "cv_hyperparameters.yaml"),
+            solar_params_yaml=solar_yaml or (PROJECT_ROOT / "config" / "solar_parameters.yaml"),
+            postgis=pg,
+            db=db_paths,
+        )
+        cfg.resolve_aoi()
+        return cfg

@@ -19,8 +19,11 @@ database/core/rfx_db_postgis_credentials.json
 
 # Live PostgreSQL/PostGIS database cluster & logs
 database/postgis_cluster/
+database/areas/
 database/core/*.log
 logs/*.log
+logs/*.jsonl
+data/areas/
 
 # Heavy geospatial binary datasets & caches (keep directory structure)
 database/core/*.gpkg

@@ -1,0 +1,62 @@
+# ==============================================================================
+# RAYFLUX SECTION 2 — AUTO-SYNTHESIZED CV PROFILE: industrial
+# ==============================================================================
+# Area Types : industrial
+# Roof Traits: corrugated_striping, painted_metal_roofs
+# Target GSD : 0.48 m/px (1 px = 0.230 m²)
+# ==============================================================================
+
+cropping:
+  pad_meters: 4.0
+chromaticity:
+  enabled: true
+  cyan_index_thresh: 0.14
+  cyan_min_blue: 95
+  max_cyan_roof_fraction: 0.25
+  max_cyan_component_pixels: 41
+  lum_object_min: 80.0
+  lum_object_max: 225.0
+glcm:
+  enabled: true
+  window_size: 5
+  levels: 32
+  contrast_obj_thresh: 28.5
+  contrast_shadow_max: 20.0
+  homogeneity_shadow_min: 0.1
+gabor:
+  enabled: true
+  frequency: 0.25
+  angles:
+  - 0.0
+  - 0.785398
+  - 1.570796
+  - 2.356194
+  energy_obj_thresh: 6.3
+morphology:
+  enabled: true
+  kernel_size: 3
+  tophat_thresh: 32
+  blackhat_thresh: 32
+  gradient_thresh: 27
+shadow:
+  enabled: true
+  lum_shadow_max: 85.0
+  max_channel_shadow_max: 108.0
+  relative_v_ratio: 0.68
+  contrast_shadow_max: 20.0
+  homogeneity_shadow_min: 0.1
+  gabor_energy_max: 5.0
+  shadow_halo_dilation_px: 1
+  min_shadow_area_m2: 0.5
+obia:
+  mask_outside_roof_fill: true
+  roof_border_erosion_px: 2
+  morph_close_kernel_size: 3
+  min_connected_pixels: 4
+  min_physical_object_area_m2: 0.9
+semantic:
+  penthouse_min_area_m2: 10.0
+  cooler_min_area_m2: 1.0
+usable_area:
+  min_usable_patch_area_m2: 2.0
+  polygon_simplify_tol_m: 0.15

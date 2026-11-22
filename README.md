@@ -102,7 +102,23 @@ cp .env.example .env
 .venv/Scripts/python.exe core_db/verify_setup.py
 ```
 
-### 4.2 Running the Ecosystem
+### 4.2 Launching RayFlux Studio (Recommended Control Center UI)
+```bash
+# Start the local Python Control Center (auto-opens http://127.0.0.1:8765)
+.venv/Scripts/python.exe rayflux_studio.py
+
+# Or on Windows, double-click:
+Launch_RayFlux_Studio.bat
+```
+**RayFlux Studio** replaces manual CLI workflows with a 6-tab operations console:
+- **Overview & Energy Stats:** Portfolio & per-area KPIs, 12-month GWh chart, Gi* breakdown, and click-to-locate Top Buildings table.
+- **Interactive GIS Map & Area Creator:** View all active areas, toggle S1/S2/S3 vector layers + live GeoTIFF raster overlays, **draw new areas directly on satellite imagery** or **upload Shapefiles / GeoJSON / ZIP**, and run the 0–100 pipeline with one click.
+- **Pipeline Runner (0–100):** Live progress bar, stage tracking, streaming terminal, cancel control, and run history.
+- **CV & Solar YAML Studio:** Multi-select Area Type & Roof Trait checkboxes + GSD slider that synthesize calibrated, validated `cv_hyperparameters.yaml` profiles in `config/profiles/`.
+- **Data Manager & Explorer:** Inspect PostGIS tables, preview rows, view generated PNG maps & Section 2 diagnostic cards, overlay rasters on map, download `.tif`/`.xlsx`/`.gpkg`/`.zip` shapefiles, or delete assets.
+- **Smart Logs, Errors & Warnings:** Filterable diagnostic stream with automatic remediation hints, PostGIS Start/Status controls, and audit log viewer.
+
+### 4.3 Running via CLI (`run_ecosystem.py`)
 ```bash
 # Check Central Geospatial Database status & PostGIS sync
 .venv/Scripts/python.exe run_ecosystem.py --status
@@ -110,11 +126,11 @@ cp .env.example .env
 # Run the entire 3-section pipeline end-to-end
 .venv/Scripts/python.exe run_ecosystem.py --all
 
-# Run individual sections independently
+# Run individual sections or registered multi-area workspaces
 .venv/Scripts/python.exe run_ecosystem.py --section 1 --aoi data/case_study_aoi/rfx_aoi_boundary.shp
-.venv/Scripts/python.exe run_ecosystem.py --section 2 --workers 8
-.venv/Scripts/python.exe run_ecosystem.py --section 3
+.venv/Scripts/python.exe run_ecosystem.py --section 2 --workers 8 --cv-profile industrial
 .venv/Scripts/python.exe run_ecosystem.py --section 3 --reuse-rasters
+.venv/Scripts/python.exe run_ecosystem.py --all --area-id area_default
 ```
 
 ---

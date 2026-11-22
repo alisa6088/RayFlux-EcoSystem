@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RayFlux Studio — Solar Intelligence Control Center</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <!-- TOP HEADER -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-dot"></div>
+      <div>RayFlux Studio <span class="sub">| Solar Intelligence Control Center</span></div>
+    </div>
+
+    <div class="topbar-controls">
+      <label style="font-size:12px;color:#94a3b8;">Active Area:</label>
+      <select id="globalAreaSelect" style="min-width:230px;"></select>
+
+      <div id="miniJobPill" class="mini-progress" onclick="switchTab('runner')">
+        <span id="miniJobText">Running...</span>
+        <div class="mini-bar-wrap"><div id="miniJobFill" class="mini-bar-fill"></div></div>
+      </div>
+
+      <span id="pgStatusPill" class="pill pill-warn">PostGIS: Checking...</span>
+      <button class="btn btn-sm" onclick="startPostGIS()">Start PostGIS</button>
+      <span id="errBadge" class="pill pill-err" onclick="switchTab('logs','ERROR')">Errors: 0</span>
+      <span id="warnBadge" class="pill pill-warn" onclick="switchTab('logs','WARNING')">Warnings: 0</span>
+      <button class="btn btn-sm btn-primary" onclick="refreshAll()">Refresh</button>
+    </div>
+  </header>
+
+  <div class="shell">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="nav-section-label">Analytics & GIS</div>
+      <button class="nav-btn active" data-tab="overview" onclick="switchTab('overview')">Overview & Energy Stats</button>
+      <button class="nav-btn" data-tab="map" onclick="switchTab('map')">Interactive GIS Map</button>
+
+      <div class="nav-section-label">Operations</div>
+      <button class="nav-btn" data-tab="runner" onclick="switchTab('runner')">Pipeline Runner (0–100)</button>
+      <button class="nav-btn" data-tab="cv" onclick="switchTab('cv')">CV & Solar YAML Studio</button>
+
+      <div class="nav-section-label">Database & Health</div>
+      <button class="nav-btn" data-tab="data" onclick="switchTab('data')">Data Manager & Downloads</button>
+      <button class="nav-btn" data-tab="logs" onclick="switchTab('logs')">Smart Logs & Errors</button>
+    </aside>
+
+    <!-- CONTENT -->
+    <main class="content">
+      <!-- TAB 1: OVERVIEW & STATISTICS -->
+      <section id="tab-overview" class="tab-pane active">
+        <div class="kpi-grid" id="kpiGrid"></div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Monthly PV Electricity Potential (GWh / Month)</div>
+              <span id="statsScopePill" class="pill pill-info">Selected Area</span>
+            </div>
+            <div style="height:260px;"><canvas id="monthlyChart"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Getis-Ord Gi* Spatial Hotspot Breakdown</div>
+            </div>
+            <div style="height:260px;"><canvas id="giChart"></canvas></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Registered Areas Summary (Multi-Area Portfolio)</div>
+            <button class="btn btn-sm btn-primary" onclick="switchTab('map')">+ Add / Draw New Area</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Area Name</th><th>Types</th><th>Extent (km²)</th><th>CRS</th>
+                  <th>S1</th><th>S2</th><th>S3</th><th>Buildings</th>
+                  <th>Usable (ha)</th><th>Capacity (MWp)</th><th>Yield (GWh/yr)</th><th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="areasSummaryBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Top Rooftop Solar Buildings (Click "Locate" to Zoom on Map)</div>
+            <input type="text" id="bldgSearchInput" placeholder="Filter by Building ID or Gi* Class..." oninput="renderTopBuildingsTable()" style="width:240px;" />
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Building ID</th><th>Gross (m²)</th><th>Usable (m²)</th><th>Usable %</th>
+                  <th>Obstacles</th><th>Irradiance (kWh/m²/yr)</th><th>Capacity (kWp)</th>
+                  <th>Annual Yield (MWh/yr)</th><th>Gi* Cluster</th><th>Map</th>
+                </tr>
+              </thead>
+              <tbody id="topBuildingsBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: INTERACTIVE GIS MAP & AREA CREATOR -->
+      <section id="tab-map" class="tab-pane map-pane">
+        <div class="map-canvas-wrap">
+          <div id="gisMap"></div>
+        </div>
+        <aside class="map-drawer">
+          <div class="drawer-block">
+            <h4>Vector Layers (Active Area)</h4>
+            <div class="check-list">
+              <label class="check-item"><input type="checkbox" id="chkBoundaries" checked onchange="toggleBoundariesLayer()" /><span class="swatch" style="background:#38bdf8;"></span> All Active Area Boundaries</label>
+              <label class="check-item"><input type="checkbox" id="chkFootprints" onchange="toggleVectorLayer('footprints')" /><span class="swatch" style="background:#94a3b8;"></span> S1: Building Footprints</label>
+              <label class="check-item"><input type="checkbox" id="chkUsable" onchange="toggleVectorLayer('usable_rooftops')" /><span class="swatch" style="background:#10b981;"></span> S2: Net Usable Rooftops</label>
+              <label class="check-item"><input type="checkbox" id="chkObstacles" onchange="toggleVectorLayer('obstacles')" /><span class="swatch" style="background:#ef4444;"></span> S2: Physical Obstacles</label>
+              <label class="check-item"><input type="checkbox" id="chkShadows" onchange="toggleVectorLayer('shadows')" /><span class="swatch" style="background:#2563eb;"></span> S2: Cast Shadows</label>
+              <label class="check-item"><input type="checkbox" id="chkYield" onchange="toggleVectorLayer('hotspots_yield')" /><span class="swatch" style="background:#f59e0b;"></span> S3: PV Yield Heatmap (MWh/yr)</label>
+              <label class="check-item"><input type="checkbox" id="chkHotspots" onchange="toggleVectorLayer('hotspots')" /><span class="swatch" style="background:#dc2626;"></span> S3: Getis-Ord Gi* Hotspots</label>
+            </div>
+          </div>
+
+          <div class="drawer-block">
+            <h4>Raster GeoTIFF Overlay</h4>
+            <div class="form-row">
+              <select id="rasterOverlaySelect" onchange="loadRasterOverlay()">
+                <option value="">-- None (Basemap Only) --</option>
+              </select>
+            </div>
+            <div class="flex-row" style="justify-content:space-between;font-size:11.5px;color:#94a3b8;">
+              <span>Opacity: <b id="rasterOpacityVal">80%</b></span>
+              <input type="range" id="rasterOpacity" min="10" max="100" value="80" oninput="updateRasterOpacity()" style="width:140px;" />
+            </div>
+            <div id="rasterRangeNote" style="font-size:11px;color:#7dd3fc;margin-top:5px;"></div>
+          </div>
+
+          <div class="drawer-block">
+            <h4>Define New Area (Draw or Upload)</h4>
+            <div class="form-row">
+              <label>Area Name *</label>
+              <input type="text" id="newAreaName" placeholder="e.g. North Industrial Zone" />
+            </div>
+            <div class="form-row">
+              <label>Source Mode</label>
+              <div style="font-size:11.5px;color:#94a3b8;line-height:1.4;">
+                Use the <b>Polygon / Rectangle tool</b> on the top-left of the map to draw, OR upload a Shapefile (`.zip` / `.shp+.dbf+.shx+.prj`), `.geojson`, or `.gpkg`:
+              </div>
+              <input type="file" id="newAreaFiles" multiple accept=".shp,.dbf,.shx,.prj,.cpg,.geojson,.json,.gpkg,.zip" style="margin-top:6px;font-size:11.5px;" />
+              <div id="drawnStatusBadge" class="pill pill-info" style="margin-top:6px;display:none;">Polygon drawn on map!</div>
+            </div>
+            <div class="form-row">
+              <label>Area Type (Auto-Optimizes CV YAML)</label>
+              <div id="mapAreaTypeChecks" class="check-grid"></div>
+            </div>
+            <div class="form-row">
+              <label>Roof Traits</label>
+              <div id="mapTraitChecks" class="check-list"></div>
+            </div>
+            <div class="flex-row">
+              <div class="form-row" style="flex:1;">
+                <label>Expected GSD (m/px)</label>
+                <input type="number" id="newAreaGsd" value="0.45" step="0.05" min="0.15" max="1.0" />
+              </div>
+              <div class="form-row" style="flex:1;">
+                <label>DSM Res (m)</label>
+                <input type="number" id="newAreaDsmRes" value="0.50" step="0.10" min="0.25" max="2.0" />
+              </div>
+            </div>
+            <div class="flex-row" style="margin-top:4px;">
+              <button class="btn btn-primary" style="flex:1;justify-content:center;" onclick="saveNewArea(false)">Save Area</button>
+              <button class="btn btn-success" style="flex:1;justify-content:center;" onclick="saveNewArea(true)">Save & Run 0–100</button>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <!-- TAB 3: PIPELINE RUNNER -->
+      <section id="tab-runner" class="tab-pane">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Launch RayFlux Ecosystem Pipeline (0–100)</div>
+            </div>
+            <div class="form-row">
+              <label>Target Registered Area</label>
+              <select id="runAreaSelect"></select>
+            </div>
+            <div class="form-row">
+              <label>Pipeline Sections to Execute</label>
+              <div class="flex-row">
+                <label class="check-item"><input type="checkbox" id="runS1" checked /> Section 1: Data Gathering (WFS + DSM + Ortho)</label>
+                <label class="check-item"><input type="checkbox" id="runS2" checked /> Section 2: Object Detection (V3 CV)</label>
+                <label class="check-item"><input type="checkbox" id="runS3" checked /> Section 3: Solar Physics & Gi* Hotspots</label>
+              </div>
+            </div>
+            <div class="grid-eq">
+              <div class="form-row">
+                <label>Section 2 CV Hyperparameter Profile (YAML)</label>
+                <select id="runCvProfile"></select>
+              </div>
+              <div class="form-row">
+                <label>Section 2 CPU Workers</label>
+                <input type="number" id="runWorkers" value="8" min="1" max="16" />
+              </div>
+              <div class="form-row">
+                <label>DSM Resolution (m)</label>
+                <input type="number" id="runDsmRes" value="0.50" step="0.1" min="0.25" max="2.0" />
+              </div>
+              <div class="form-row">
+                <label>Min Building Footprint Area (m²)</label>
+                <input type="number" id="runMinArea" value="50" step="10" min="10" max="500" />
+              </div>
+            </div>
+            <label class="check-item" style="margin-bottom:12px;">
+              <input type="checkbox" id="runReuseRasters" />
+              Section 3 Fast Mode: Reuse existing horizon & irradiance GeoTIFF rasters (recompute Zonal, PV Yield, Gi* & Maps only)
+            </label>
+            <div class="flex-row">
+              <button class="btn btn-success" id="btnStartJob" onclick="launchPipeline()">Run Selected Pipeline</button>
+              <button class="btn btn-danger" id="btnCancelJob" onclick="cancelActiveJob()" disabled>Stop Running Job</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Live Execution Progress</div>
+              <span id="jobStatusPill" class="pill pill-info">Idle</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;">
+              <span id="jobStageText" style="color:#cbd5e1;">No active job.</span>
+              <b id="jobPctText" style="color:#38bdf8;">0%</b>
+            </div>
+            <div class="progress-track"><div id="jobProgressFill" class="progress-fill"></div></div>
+            <div class="flex-row" style="justify-content:space-between;font-size:12px;color:#94a3b8;margin-bottom:10px;">
+              <span>Job ID: <b id="jobIdText">—</b></span>
+              <span>Elapsed: <b id="jobElapsedText">0.0s</b></span>
+              <span>Warnings: <b id="jobWarnText" style="color:#fbbf24;">0</b> | Errors: <b id="jobErrText" style="color:#f87171;">0</b></span>
+            </div>
+            <div id="liveTerminal" class="terminal">Ready. Select an area and click "Run Selected Pipeline".</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><div class="card-title">Recent Pipeline Runs</div></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Job ID</th><th>Area</th><th>Sections</th><th>CV Profile</th><th>Status</th><th>Progress</th><th>Elapsed</th><th>Errors</th></tr></thead>
+              <tbody id="jobsHistoryBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: CV & SOLAR YAML STUDIO -->
+      <section id="tab-cv" class="tab-pane">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Smart Regional CV Hyperparameter Generator (Section 2)</div>
+              <span class="pill pill-info">Physics & GSD Calibrated</span>
+            </div>
+            <div class="form-row">
+              <label>Profile Name</label>
+              <input type="text" id="cvProfileName" value="industrial_custom" placeholder="e.g. north_residential_zone" />
+            </div>
+            <div class="form-row">
+              <label>1. Select Area Type(s) (Multi-Select Blending)</label>
+              <div id="cvAreaTypesContainer" class="check-list"></div>
+            </div>
+            <div class="form-row">
+              <label>2. Roof & Imagery Characteristics</label>
+              <div id="cvTraitsContainer" class="check-list"></div>
+            </div>
+            <div class="form-row">
+              <label>3. Target Satellite Imagery GSD: <b id="cvGsdLabel">0.48 m/px</b></label>
+              <input type="range" id="cvGsdSlider" min="0.15" max="0.60" step="0.01" value="0.48" oninput="document.getElementById('cvGsdLabel').textContent=parseFloat(this.value).toFixed(2)+' m/px'" />
+            </div>
+            <button class="btn btn-primary" onclick="generateCvYaml()">Generate Optimized YAML</button>
+
+            <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;" />
+            <div class="card-title" style="margin-bottom:8px;">Saved Regional Profiles (config/profiles/)</div>
+            <div id="savedProfilesList" class="check-list"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">CV Hyperparameters YAML Editor (Validated on Save)</div>
+              <div class="flex-row">
+                <button class="btn btn-sm btn-primary" onclick="saveCvProfile(false)">Save Profile</button>
+                <button class="btn btn-sm btn-success" onclick="saveCvProfile(true)">Save & Set Default</button>
+                <button class="btn btn-sm btn-amber" onclick="assignCvToActiveArea()">Assign to Active Area</button>
+              </div>
+            </div>
+            <textarea id="cvYamlEditor" class="yaml-editor" spellcheck="false"></textarea>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Section 3 Solar Physics & Gi* Parameters (config/solar_parameters.yaml)</div>
+            <button class="btn btn-sm btn-success" onclick="saveSolarYaml()">Save Solar YAML</button>
+          </div>
+          <textarea id="solarYamlEditor" class="yaml-editor" style="min-height:240px;" spellcheck="false"></textarea>
+        </div>
+      </section>
+
+      <!-- TAB 5: DATA MANAGEMENT & EXPLORER -->
+      <section id="tab-data" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">PostGIS Spatial Tables (<span id="dataPgSchema">public</span>)</div>
+            <span id="dataPgState" class="pill pill-info">Checking...</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Schema</th><th>Table</th><th>Rows</th><th>Disk Size</th><th>Actions</th></tr></thead>
+              <tbody id="pgTablesBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="grid-eq">
+          <div class="card">
+            <div class="card-header"><div class="card-title">GeoTIFF Rasters (DSM, Ortho, Horizon, Irradiance)</div></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Section</th><th>Asset</th><th>Size (MB)</th><th>Actions</th></tr></thead>
+                <tbody id="rastersBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div class="card-title">Shapefiles, GeoPackages & Excel Tables</div></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Type</th><th>File</th><th>Size (MB)</th><th>Actions</th></tr></thead>
+                <tbody id="vectorsTablesBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><div class="card-title">Generated Maps & Section 2 Diagnostic Cards (Click to Zoom)</div></div>
+          <div id="mapsGallery" class="gallery"></div>
+        </div>
+      </section>
+
+      <!-- TAB 6: SMART LOGS, ERRORS & WARNINGS -->
+      <section id="tab-logs" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Smart Diagnostics, Errors & Warnings Center</div>
+            <div class="flex-row">
+              <button class="btn btn-sm" onclick="setLogFilter('ALL')">All (<span id="cntAll">0</span>)</button>
+              <button class="btn btn-sm btn-danger" onclick="setLogFilter('ERROR')">Errors (<span id="cntErr">0</span>)</button>
+              <button class="btn btn-sm btn-amber" onclick="setLogFilter('WARNING')">Warnings (<span id="cntWarn">0</span>)</button>
+              <button class="btn btn-sm btn-success" onclick="setLogFilter('SUCCESS')">Success (<span id="cntOk">0</span>)</button>
+              <input type="text" id="logSearchInput" placeholder="Search logs..." oninput="loadLogs()" style="width:200px;" />
+              <button class="btn btn-sm" onclick="clearLogs()">Clear Events</button>
+            </div>
+          </div>
+          <div id="eventsList" style="max-height:420px;overflow-y:auto;"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><div class="card-title">Central Database Transaction Audit Log (rfx_db_transaction_audit.log)</div></div>
+          <div id="auditLogBox" class="terminal" style="height:200px;"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- MODAL FOR TABLE / IMAGE PREVIEW -->
+  <div id="previewModal" class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+    <div class="modal-box">
+      <div class="card-header">
+        <div id="modalTitle" class="card-title">Preview</div>
+        <button class="btn btn-sm" onclick="closeModal()">Close</button>
+      </div>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <div id="toastContainer" class="toast-container"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

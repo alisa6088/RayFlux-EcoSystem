@@ -1,0 +1,62 @@
+# ==============================================================================
+# RAYFLUX SECTION 2 — AUTO-SYNTHESIZED CV PROFILE: mixed_urban
+# ==============================================================================
+# Area Types : mixed_urban
+# Roof Traits: none
+# Target GSD : 0.40 m/px (1 px = 0.160 m²)
+# ==============================================================================
+
+cropping:
+  pad_meters: 3.5
+chromaticity:
+  enabled: true
+  cyan_index_thresh: 0.11
+  cyan_min_blue: 85
+  max_cyan_roof_fraction: 0.32
+  max_cyan_component_pixels: 66
+  lum_object_min: 76.0
+  lum_object_max: 228.0
+glcm:
+  enabled: true
+  window_size: 5
+  levels: 32
+  contrast_obj_thresh: 23.0
+  contrast_shadow_max: 20.0
+  homogeneity_shadow_min: 0.1
+gabor:
+  enabled: true
+  frequency: 0.25
+  angles:
+  - 0.0
+  - 0.785398
+  - 1.570796
+  - 2.356194
+  energy_obj_thresh: 4.9
+morphology:
+  enabled: true
+  kernel_size: 3
+  tophat_thresh: 29
+  blackhat_thresh: 29
+  gradient_thresh: 21
+shadow:
+  enabled: true
+  lum_shadow_max: 87.0
+  max_channel_shadow_max: 114.0
+  relative_v_ratio: 0.69
+  contrast_shadow_max: 20.0
+  homogeneity_shadow_min: 0.1
+  gabor_energy_max: 5.0
+  shadow_halo_dilation_px: 1
+  min_shadow_area_m2: 0.5
+obia:
+  mask_outside_roof_fill: true
+  roof_border_erosion_px: 2
+  morph_close_kernel_size: 3
+  min_connected_pixels: 4
+  min_physical_object_area_m2: 0.55
+semantic:
+  penthouse_min_area_m2: 7.5
+  cooler_min_area_m2: 0.85
+usable_area:
+  min_usable_patch_area_m2: 1.6
+  polygon_simplify_tol_m: 0.15

@@ -160,15 +160,19 @@ class CentralDatabaseManager:
         pg_engine = self.get_postgis_engine()
         if pg_engine is not None:
             try:
+                schema = self.config.postgis.schema
+                if schema and schema != "public":
+                    with pg_engine.begin() as conn:
+                        conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
                 gdf.to_postgis(
                     name=gpkg_layer,
                     con=pg_engine,
-                    schema=self.config.postgis.schema,
+                    schema=schema,
                     if_exists="replace",
                     index=True,
                 )
                 postgis_synced = True
-                self._log_audit("WRITE_POSTGIS", f"{self.config.postgis.schema}.{gpkg_layer}", f"rows={len(gdf)}")
+                self._log_audit("WRITE_POSTGIS", f"{schema}.{gpkg_layer}", f"rows={len(gdf)}")
             except Exception as exc:
                 self._log_audit("POSTGIS_WRITE_WARN", gpkg_layer, str(exc))
 
