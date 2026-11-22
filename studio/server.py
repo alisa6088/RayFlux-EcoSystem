@@ -30,7 +30,9 @@ from studio.gis_service import (
     get_all_area_boundaries_geojson,
     get_area_data_inventory,
     get_area_vector_geojson,
+    preflight_area_sections,
     preview_table_rows,
+    purge_area_sections,
     render_raster_overlay_png,
     resolve_safe_project_file,
 )
@@ -67,6 +69,10 @@ class UpdateAreaRequest(BaseModel):
     cv_profile: Optional[str] = None
     dsm_resolution_m: Optional[float] = None
     min_building_area_m2: Optional[float] = None
+
+
+class PurgeSectionsRequest(BaseModel):
+    sections: List[int] = []
 
 
 class RunJobRequest(BaseModel):
@@ -342,7 +348,27 @@ def api_save_solar_config(req: SaveSolarYamlRequest):
         raise HTTPException(status_code=400, detail=str(exc))
 
 
-# ---------------- Pipeline Execution & Progress ----------------
+# ---------------- Pipeline Execution, Preflight & Selective Cleanup ----------------
+
+@app.get("/api/areas/{area_id}/preflight")
+def api_area_preflight(area_id: str, sections: str = Query("1,2,3")):
+    try:
+        sec_list = [int(s.strip()) for s in sections.split(",") if s.strip().isdigit()]
+        return preflight_area_sections(area_id, sec_list)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.post("/api/areas/{area_id}/purge-sections")
+def api_purge_sections(area_id: str, req: PurgeSectionsRequest):
+    try:
+        return purge_area_sections(area_id, req.sections)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        studio_logger.error(f"Section purge failed for '{area_id}': {exc}", section="CLEANUP", area_id=area_id)
+        raise HTTPException(status_code=500, detail=str(exc))
+
 
 @app.post("/api/jobs/run")
 def api_run_job(req: RunJobRequest):

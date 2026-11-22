@@ -883,6 +883,125 @@ async function launchPipeline() {
   }
 
   try {
+    // Preflight check: warn & require approval if any selected section already has data
+    const pre = await api(`/api/areas/${areaId}/preflight?sections=${sections.join(",")}`);
+    if (pre.has_existing_data) {
+      openRerunApprovalModal(pre, sections);
+      return;
+    }
+    await _executePipelineJob(areaId, sections);
+  } catch (e) {
+    toast(e.message, "error");
+  }
+}
+
+function openRerunApprovalModal(pre, initialRunSections) {
+  const rowsHtml = pre.sections.map((s) => {
+    const statusPill = s.exists
+      ? `<span class="pill pill-warn">Exists (${s.file_count} files · ${fmtNum(s.size_mb, 2)} MB)</span>`
+      : `<span class="pill pill-info">Empty</span>`;
+    const removeChecked = (s.exists && initialRunSections.includes(s.section)) ? "checked" : "";
+    const runChecked = initialRunSections.includes(s.section) ? "checked" : "";
+    return `
+      <tr>
+        <td><b>Section ${s.section}</b><br/><span style="font-size:11px;color:#94a3b8;">${s.label}</span></td>
+        <td>${statusPill}</td>
+        <td style="text-align:center;">
+          <input type="checkbox" class="chk-purge-sec" data-sec="${s.section}" ${removeChecked} ${s.exists ? "" : "disabled"} onchange="syncPurgeAllCheckbox()" />
+        </td>
+        <td style="text-align:center;">
+          <input type="checkbox" class="chk-rerun-sec" data-sec="${s.section}" ${runChecked} />
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  const html = `
+    <div style="background:rgba(245,158,11,0.14);border:1px solid rgba(245,158,11,0.45);border-radius:8px;padding:12px;margin-bottom:14px;color:#fde68a;font-size:13px;">
+      <b>Warning — Existing Results Detected for "${pre.area_name}" (${pre.area_id})</b><br/>
+      One or more selected sections already have stored files, GeoPackage layers, and PostGIS tables.
+      Choose which existing section data you want to <b>remove</b> before re-running, then approve to start.
+    </div>
+
+    <label class="check-item" style="margin-bottom:12px;border:1px solid rgba(239,68,68,0.4);background:rgba(239,68,68,0.10);">
+      <input type="checkbox" id="chkPurgeAllSections" onchange="togglePurgeAllSections(this.checked)" />
+      <div>
+        <b style="color:#fca5a5;">Remove ALL Existing Sections' Data (Section 1 + Section 2 + Section 3)</b>
+        <div style="font-size:11.5px;color:#cbd5e1;">Clears all files, rasters, shapefiles, Excel reports, maps &amp; PostGIS tables for this area before running.</div>
+      </div>
+    </label>
+
+    <div class="table-wrap" style="margin-bottom:14px;">
+      <table>
+        <thead>
+          <tr>
+            <th>Pipeline Section</th>
+            <th>Current Data Status</th>
+            <th style="text-align:center;">Remove Existing Data</th>
+            <th style="text-align:center;">Run Section</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+
+    <div class="flex-row" style="justify-content:flex-end;">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="approvePurgeAndRun('${pre.area_id}')">Approve Cleanup &amp; Start Pipeline</button>
+    </div>
+  `;
+
+  openModal("Re-Run Confirmation & Selective Data Cleanup", html);
+  syncPurgeAllCheckbox();
+}
+
+function togglePurgeAllSections(checked) {
+  document.querySelectorAll(".chk-purge-sec:not(:disabled)").forEach((el) => {
+    el.checked = checked;
+  });
+}
+
+function syncPurgeAllCheckbox() {
+  const boxes = Array.from(document.querySelectorAll(".chk-purge-sec:not(:disabled)"));
+  const master = document.getElementById("chkPurgeAllSections");
+  if (!master) return;
+  master.checked = boxes.length > 0 && boxes.every((b) => b.checked);
+}
+
+async function approvePurgeAndRun(areaId) {
+  const purgeSecs = Array.from(document.querySelectorAll(".chk-purge-sec:checked")).map((el) => Number(el.dataset.sec));
+  const runSecs = Array.from(document.querySelectorAll(".chk-rerun-sec:checked")).map((el) => Number(el.dataset.sec));
+
+  if (!runSecs.length) {
+    toast("Select at least one section to run (or click Cancel).", "error");
+    return;
+  }
+
+  // Sync main Runner checkboxes with user's approved choices
+  document.getElementById("runS1").checked = runSecs.includes(1);
+  document.getElementById("runS2").checked = runSecs.includes(2);
+  document.getElementById("runS3").checked = runSecs.includes(3);
+
+  closeModal();
+
+  try {
+    if (purgeSecs.length > 0) {
+      toast(`Removing existing data for Section(s) ${purgeSecs.join(", ")}...`, "info");
+      const res = await api(`/api/areas/${areaId}/purge-sections`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sections: purgeSecs }),
+      });
+      toast(`Cleaned Section(s) ${res.removed_sections.join(", ")}: ${res.files_removed} files removed.`, "ok");
+    }
+    await _executePipelineJob(areaId, runSecs);
+  } catch (e) {
+    toast(`Cleanup / Launch failed: ${e.message}`, "error");
+  }
+}
+
+async function _executePipelineJob(areaId, sections) {
+  try {
     const res = await api("/api/jobs/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

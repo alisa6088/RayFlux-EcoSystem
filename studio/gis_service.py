@@ -406,3 +406,165 @@ def delete_asset_file(rel_path: str, area_id: Optional[str] = None) -> Dict[str,
 
     studio_logger.warning(f"Deleted asset(s): {', '.join(deleted)}", section="DATA_MANAGER", area_id=area_id)
     return {"deleted": deleted}
+
+
+SECTION_SPECS = {
+    1: {
+        "label": "Section 1 — Data Gathering (Footprints, Synthetic DSM, RGB Ortho)",
+        "dirs": ["rasters/s01_base", "shapefiles/s01_base", "tables/s01_base", "maps/s01_base"],
+        "pg_tables": ["s01_building_footprints"],
+        "catalog_prefixes": ("s01_",),
+    },
+    2: {
+        "label": "Section 2 — Rooftop Object Detection (Usable Roofs, Obstacles, Shadows, Cards)",
+        "dirs": ["shapefiles/s02_vision", "tables/s02_vision", "maps/s02_vision"],
+        "pg_tables": ["s02_usable_rooftops", "s02_physical_obstacles", "s02_cast_shadows"],
+        "catalog_prefixes": ("s02_",),
+    },
+    3: {
+        "label": "Section 3 — Solar Physics, PV Yield & Hotspots (Rasters, Zonal, Gi*, Excel, Maps)",
+        "dirs": ["rasters/s03_solar", "shapefiles/s03_solar", "tables/s03_solar", "maps/s03_solar"],
+        "pg_tables": ["s03_solar_zonal_stats", "s03_solar_hotspots_final"],
+        "catalog_prefixes": ("s03_",),
+    },
+}
+
+
+def preflight_area_sections(area_id: str, selected_sections: List[int]) -> Dict[str, Any]:
+    """Inspects which sections already have stored files/tables for `area_id` before a pipeline re-run."""
+    area = area_registry.get_area(area_id)
+    db_root = PROJECT_ROOT / area["db_root"]
+    cat_path = db_root / "core" / "rfx_db_asset_catalog.json"
+    catalog = {}
+    if cat_path.exists():
+        try:
+            catalog = json.loads(cat_path.read_text(encoding="utf-8"))
+        except Exception:
+            catalog = {}
+
+    sec_info: Dict[int, Dict[str, Any]] = {}
+    any_conflict = False
+    for sec in (1, 2, 3):
+        spec = SECTION_SPECS[sec]
+        file_count = 0
+        total_bytes = 0
+        for rel_d in spec["dirs"]:
+            dpath = db_root / rel_d
+            if dpath.exists():
+                for f in dpath.rglob("*"):
+                    if f.is_file() and f.name != ".gitkeep":
+                        file_count += 1
+                        total_bytes += f.stat().st_size
+        cat_keys = [k for k in catalog.keys() if k.startswith(spec["catalog_prefixes"])]
+        exists = file_count > 0 or len(cat_keys) > 0
+        if exists and sec in selected_sections:
+            any_conflict = True
+        sec_info[sec] = {
+            "section": sec,
+            "label": spec["label"],
+            "exists": exists,
+            "file_count": file_count,
+            "size_mb": round(total_bytes / (1024 * 1024), 2),
+            "catalog_entries": len(cat_keys),
+            "selected_to_run": sec in selected_sections,
+        }
+
+    return {
+        "area_id": area_id,
+        "area_name": area["name"],
+        "has_existing_data": any_conflict,
+        "any_section_exists": any(v["exists"] for v in sec_info.values()),
+        "sections": [sec_info[1], sec_info[2], sec_info[3]],
+    }
+
+
+def purge_area_sections(area_id: str, sections_to_remove: List[int]) -> Dict[str, Any]:
+    """Surgically removes selected sections' disk outputs, GPKG layers, catalog entries & PostGIS tables."""
+    clean_secs = sorted(set(s for s in sections_to_remove if s in (1, 2, 3)))
+    if not clean_secs:
+        return {"area_id": area_id, "removed_sections": [], "files_removed": 0, "pg_tables_dropped": []}
+
+    area = area_registry.get_area(area_id)
+    cfg = area_registry.build_ecosystem_config(area_id)
+    db_root = PROJECT_ROOT / area["db_root"]
+    schema = area.get("postgis_schema", "public")
+
+    files_removed = 0
+    pg_tables_dropped: List[str] = []
+    layers_to_remove: List[str] = []
+    prefixes_to_remove: List[str] = []
+
+    # 1. Remove disk files per selected section (preserve directory tree & .gitkeep)
+    for sec in clean_secs:
+        spec = SECTION_SPECS[sec]
+        layers_to_remove.extend(spec["pg_tables"])
+        prefixes_to_remove.extend(spec["catalog_prefixes"])
+        for rel_d in spec["dirs"]:
+            dpath = db_root / rel_d
+            if not dpath.exists():
+                continue
+            for f in list(dpath.rglob("*")):
+                if f.is_file() and f.name != ".gitkeep":
+                    try:
+                        f.unlink()
+                        files_removed += 1
+                    except Exception as exc:
+                        studio_logger.warning(f"Could not delete {f.name}: {exc}", section="CLEANUP", area_id=area_id)
+
+    # 2. Remove corresponding layers from Master GeoPackage (or delete whole GPKG if all 3 sections purged)
+    gpkg = cfg.db.master_gpkg
+    if gpkg.exists():
+        if clean_secs == [1, 2, 3]:
+            try:
+                gpkg.unlink()
+                files_removed += 1
+            except Exception as exc:
+                studio_logger.warning(f"Could not remove master GPKG: {exc}", section="CLEANUP", area_id=area_id)
+        else:
+            try:
+                import fiona
+                existing_lyrs = fiona.listlayers(str(gpkg))
+                for lyr in layers_to_remove:
+                    if lyr in existing_lyrs:
+                        try:
+                            fiona.remove(str(gpkg), driver="GPKG", layer=lyr)
+                        except Exception:
+                            pass
+            except Exception as exc:
+                studio_logger.warning(f"GPKG layer cleanup warning: {exc}", section="CLEANUP", area_id=area_id)
+
+    # 3. Drop PostGIS tables for removed sections
+    try:
+        eng = CentralDatabaseManager(cfg).get_postgis_engine()
+        if eng is not None:
+            with eng.begin() as conn:
+                for tbl in layers_to_remove:
+                    conn.execute(text(f'DROP TABLE IF EXISTS "{schema}"."{tbl}" CASCADE'))
+                    pg_tables_dropped.append(f"{schema}.{tbl}")
+    except Exception as exc:
+        studio_logger.warning(f"PostGIS table drop skipped ({exc})", section="CLEANUP", area_id=area_id)
+
+    # 4. Prune entries from rfx_db_asset_catalog.json
+    cat_path = cfg.db.catalog_json
+    if cat_path.exists():
+        try:
+            catalog = json.loads(cat_path.read_text(encoding="utf-8"))
+            pruned = {
+                k: v for k, v in catalog.items()
+                if not any(k.startswith(pref) for pref in prefixes_to_remove)
+            }
+            cat_path.write_text(json.dumps(pruned, indent=2), encoding="utf-8")
+        except Exception as exc:
+            studio_logger.warning(f"Catalog prune warning: {exc}", section="CLEANUP", area_id=area_id)
+
+    studio_logger.warning(
+        f"Purged Sections {clean_secs} for area '{area_id}': {files_removed} files removed, {len(pg_tables_dropped)} PostGIS tables dropped.",
+        section="CLEANUP",
+        area_id=area_id,
+    )
+    return {
+        "area_id": area_id,
+        "removed_sections": clean_secs,
+        "files_removed": files_removed,
+        "pg_tables_dropped": pg_tables_dropped,
+    }
