@@ -86,13 +86,19 @@ def render_s01_overview_map(
 
 
 def run_section1(
-    aoi_override: Optional[Union[Path, str, Tuple[float, float, float, float]]] = None,
+    aoi_override: Optional[Union[EcosystemConfig, Path, str, Tuple[float, float, float, float]]] = None,
+    config: Optional[EcosystemConfig] = None,
 ) -> None:
     t0 = time.time()
-    config = EcosystemConfig()
+    if isinstance(aoi_override, EcosystemConfig):
+        config = aoi_override
+        aoi_override = None
+    if config is None:
+        config = EcosystemConfig()
     if aoi_override is not None:
         config.aoi_source = aoi_override
 
+    config.db.ensure_directories()
     db_mgr = CentralDatabaseManager(config)
     aoi = config.resolve_aoi()
 

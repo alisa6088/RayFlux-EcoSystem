@@ -294,6 +294,7 @@ function openRunnerForArea(areaId) {
   STATE.activeAreaId = areaId;
   document.getElementById("globalAreaSelect").value = areaId;
   document.getElementById("runAreaSelect").value = areaId;
+  syncRunnerProfileForArea();
   switchTab("runner");
 }
 
@@ -646,6 +647,7 @@ async function loadCvProfiles() {
 
   const runSel = document.getElementById("runCvProfile");
   runSel.innerHTML = STATE.cvProfiles.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
+  syncRunnerProfileForArea();
 
   document.getElementById("savedProfilesList").innerHTML = STATE.cvProfiles.map((p) => `
     <div class="check-item" style="justify-content:space-between;align-items:center;">
@@ -737,6 +739,17 @@ async function saveSolarYaml() {
 
 /* ---------------- Pipeline Runner & Live Progress ---------------- */
 
+function syncRunnerProfileForArea() {
+  const areaId = document.getElementById("runAreaSelect").value;
+  const area = STATE.areas.find((a) => a.area_id === areaId);
+  if (area && area.cv_profile) {
+    const sel = document.getElementById("runCvProfile");
+    if (Array.from(sel.options).some((o) => o.value === area.cv_profile)) {
+      sel.value = area.cv_profile;
+    }
+  }
+}
+
 async function launchPipeline() {
   const areaId = document.getElementById("runAreaSelect").value;
   const sections = [];
@@ -756,10 +769,6 @@ async function launchPipeline() {
         area_id: areaId,
         sections,
         cv_profile: document.getElementById("runCvProfile").value || "default",
-        workers: Number(document.getElementById("runWorkers").value || 8),
-        reuse_rasters: document.getElementById("runReuseRasters").checked,
-        dsm_res: Number(document.getElementById("runDsmRes").value || 0.5),
-        min_area: Number(document.getElementById("runMinArea").value || 50),
       }),
     });
     STATE.activeJobId = res.job.job_id;
