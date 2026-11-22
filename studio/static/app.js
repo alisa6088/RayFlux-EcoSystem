@@ -76,7 +76,7 @@ function closeModal() {
   document.getElementById("previewModal").classList.remove("open");
 }
 
-function switchTab(tabName, logFilterOpt = null) {
+function switchTab(tabName, logFilterOpt = null, skipMapZoom = false) {
   document.querySelectorAll(".tab-pane").forEach((el) => el.classList.remove("active"));
   document.querySelectorAll(".nav-btn").forEach((el) => el.classList.remove("active"));
   const pane = document.getElementById(`tab-${tabName}`);
@@ -86,7 +86,12 @@ function switchTab(tabName, logFilterOpt = null) {
 
   if (tabName === "map") {
     initMapIfNeeded();
-    setTimeout(() => STATE.map && STATE.map.invalidateSize(), 120);
+    setTimeout(() => {
+      if (STATE.map) {
+        STATE.map.invalidateSize();
+        if (!skipMapZoom) zoomToActiveArea();
+      }
+    }, 140);
   } else if (tabName === "data") {
     loadDataInventory();
   } else if (tabName === "logs") {
@@ -480,8 +485,13 @@ async function loadAllBoundariesOnMap() {
           `Area: ${p.area_km2} km² (${p.target_crs})<br/>Buildings: ${p.buildings_count}`
         );
         layer.on("click", () => {
-          STATE.activeAreaId = p.area_id;
-          document.getElementById("globalAreaSelect").value = p.area_id;
+          if (STATE.activeAreaId !== p.area_id) {
+            const sel = document.getElementById("globalAreaSelect");
+            sel.value = p.area_id;
+            sel.dispatchEvent(new Event("change"));
+          } else {
+            zoomToActiveArea();
+          }
         });
       },
     }).addTo(STATE.map);
@@ -507,7 +517,7 @@ function zoomToActiveArea() {
 }
 
 function locateBuilding(lat, lon, bldgId) {
-  switchTab("map");
+  switchTab("map", null, true);
   setTimeout(async () => {
     STATE.map.setView([lat, lon], 18);
     if (!document.getElementById("chkHotspots").checked) {
@@ -1145,8 +1155,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("globalAreaSelect").addEventListener("change", async (e) => {
     STATE.activeAreaId = e.target.value;
     document.getElementById("runAreaSelect").value = STATE.activeAreaId;
-    await loadOverview();
-    await loadDataInventory();
+    syncRunnerProfileForArea();
     if (STATE.map) {
       Object.values(STATE.vectorLayers).forEach((l) => STATE.map.removeLayer(l));
       STATE.vectorLayers = {};
@@ -1156,9 +1165,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (STATE.rasterOverlay) {
         STATE.map.removeLayer(STATE.rasterOverlay);
         STATE.rasterOverlay = null;
+        document.getElementById("rasterOverlaySelect").value = "";
+        document.getElementById("rasterRangeNote").textContent = "";
       }
+      zoomToActiveArea();
       await loadAllBoundariesOnMap();
     }
+    await loadOverview();
+    await loadDataInventory();
   });
 
   await loadCvOptions();
