@@ -20,8 +20,10 @@ const STATE = {
   drawnItems: null,
   drawnGeoJSON: null,
   inputPolyVisible: true,
-  boundariesLayer: null,
+  boundariesGroup: null,
+  boundariesReqId: 0,
   vectorLayers: {},
+  vectorReqIds: {},
   rasterOverlay: null,
   // Charts
   monthlyChart: null,
@@ -337,6 +339,7 @@ function initMapIfNeeded() {
   STATE.map = L.map("gisMap", { center: [35.7075, 50.2981], zoom: 13, layers: [esriSat] });
   L.control.layers({ "Esri Satellite": esriSat, "Dark Matter": darkMap, "OpenStreetMap": osm }).addTo(STATE.map);
 
+  STATE.boundariesGroup = new L.LayerGroup().addTo(STATE.map);
   STATE.drawnItems = new L.FeatureGroup().addTo(STATE.map);
   STATE.drawControl = new L.Control.Draw({
     edit: { featureGroup: STATE.drawnItems },
@@ -463,15 +466,20 @@ function previewUploadedGeoJson() {
 }
 
 async function loadAllBoundariesOnMap() {
-  if (!STATE.map) return;
-  if (STATE.boundariesLayer) {
-    STATE.map.removeLayer(STATE.boundariesLayer);
-    STATE.boundariesLayer = null;
-  }
+  if (!STATE.map || !STATE.boundariesGroup) return;
+  const reqId = ++STATE.boundariesReqId;
+  STATE.boundariesGroup.clearLayers();
   if (!document.getElementById("chkBoundaries").checked) return;
+
   try {
     const fc = await api("/api/map/areas");
-    STATE.boundariesLayer = L.geoJSON(fc, {
+    // Abort if user unchecked the box or triggered a newer load while fetch was in flight
+    if (reqId !== STATE.boundariesReqId || !document.getElementById("chkBoundaries").checked) {
+      STATE.boundariesGroup.clearLayers();
+      return;
+    }
+    STATE.boundariesGroup.clearLayers();
+    L.geoJSON(fc, {
       style: (f) => ({
         color: f.properties.area_id === STATE.activeAreaId ? "#38bdf8" : "#f59e0b",
         weight: f.properties.area_id === STATE.activeAreaId ? 3 : 2,
@@ -494,10 +502,7 @@ async function loadAllBoundariesOnMap() {
           }
         });
       },
-    }).addTo(STATE.map);
-    if (fc.features && fc.features.length > 0) {
-      zoomToActiveArea();
-    }
+    }).addTo(STATE.boundariesGroup);
   } catch (e) {
     toast(`Boundaries error: ${e.message}`, "error");
   }
@@ -573,6 +578,9 @@ async function toggleVectorLayer(layerKey) {
   };
   const checked = document.getElementById(chkMap[layerKey]).checked;
 
+  const reqId = (STATE.vectorReqIds[layerKey] || 0) + 1;
+  STATE.vectorReqIds[layerKey] = reqId;
+
   if (STATE.vectorLayers[layerKey]) {
     STATE.map.removeLayer(STATE.vectorLayers[layerKey]);
     delete STATE.vectorLayers[layerKey];
@@ -583,10 +591,16 @@ async function toggleVectorLayer(layerKey) {
   try {
     toast(`Loading ${layerKey} layer...`, "info");
     const fc = await api(`/api/areas/${STATE.activeAreaId}/layer/${backendKey}?simplify_m=0.5&max_features=8000`);
+    if (reqId !== STATE.vectorReqIds[layerKey] || !document.getElementById(chkMap[layerKey]).checked) {
+      return;
+    }
     if (!fc.features || fc.features.length === 0) {
       toast(`No features found for ${layerKey} in this area. Run the corresponding section first.`, "error");
       document.getElementById(chkMap[layerKey]).checked = false;
       return;
+    }
+    if (STATE.vectorLayers[layerKey]) {
+      STATE.map.removeLayer(STATE.vectorLayers[layerKey]);
     }
     STATE.vectorLayers[layerKey] = L.geoJSON(fc, {
       style: (f) => styleForLayer(layerKey, f),
