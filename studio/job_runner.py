@@ -39,6 +39,7 @@ class PipelineJobManager:
         reuse_rasters: bool = False,
         dsm_res: Optional[float] = None,
         min_area: Optional[float] = None,
+        imagery_zoom: int = 18,
     ) -> Dict[str, Any]:
         with self._lock:
             if self._active_job_id and self._jobs.get(self._active_job_id, {}).get("status") == "running":
@@ -48,8 +49,13 @@ class PipelineJobManager:
             if not clean_sections:
                 raise ValueError("Select at least one section (1, 2, or 3) to run.")
 
+            zoom_val = 19 if int(imagery_zoom) == 19 else 18
             job_id = f"job_{datetime.now().strftime('%H%M%S')}_{uuid.uuid4().hex[:5]}"
-            cmd = [sys.executable, "-u", str(PROJECT_ROOT / "run_ecosystem.py"), "--area-id", area_id]
+            cmd = [
+                sys.executable, "-u", str(PROJECT_ROOT / "run_ecosystem.py"),
+                "--area-id", area_id,
+                "--zoom", str(zoom_val),
+            ]
             if clean_sections == [1, 2, 3]:
                 cmd.append("--all")
             else:

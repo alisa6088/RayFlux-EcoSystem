@@ -131,6 +131,13 @@ def main() -> int:
         help="Override minimum building footprint area in m² (default: 50.0).",
     )
     parser.add_argument(
+        "--zoom",
+        type=int,
+        choices=[18, 19],
+        default=None,
+        help="Section 1 satellite imagery zoom level: 18 (fast default) or 19 (HD with auto-fallback to 18).",
+    )
+    parser.add_argument(
         "--workers",
         type=int,
         default=None,
@@ -166,6 +173,8 @@ def main() -> int:
         cfg.dsm_resolution_m = float(args.dsm_res)
     if args.min_area is not None:
         cfg.min_building_area_m2 = float(args.min_area)
+    if args.zoom is not None:
+        cfg.imagery_zoom = int(args.zoom)
 
     if args.status or (not args.all and not args.section):
         print_ecosystem_status(cfg)

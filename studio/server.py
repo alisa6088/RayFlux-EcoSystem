@@ -77,6 +77,7 @@ class RunJobRequest(BaseModel):
     reuse_rasters: bool = False
     dsm_res: Optional[float] = None
     min_area: Optional[float] = None
+    imagery_zoom: int = 18
 
 
 class SynthesizeCVRequest(BaseModel):
@@ -354,6 +355,7 @@ def api_run_job(req: RunJobRequest):
             reuse_rasters=req.reuse_rasters,
             dsm_res=req.dsm_res,
             min_area=req.min_area,
+            imagery_zoom=req.imagery_zoom,
         )
         return {"job": job}
     except Exception as exc:

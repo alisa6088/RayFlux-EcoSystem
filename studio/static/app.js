@@ -15,8 +15,11 @@ const STATE = {
   pollTimer: null,
   // Leaflet Map state
   map: null,
+  drawControl: null,
+  drawImportEnabled: true,
   drawnItems: null,
   drawnGeoJSON: null,
+  inputPolyVisible: true,
   boundariesLayer: null,
   vectorLayers: {},
   rasterOverlay: null,
@@ -330,33 +333,128 @@ function initMapIfNeeded() {
   L.control.layers({ "Esri Satellite": esriSat, "Dark Matter": darkMap, "OpenStreetMap": osm }).addTo(STATE.map);
 
   STATE.drawnItems = new L.FeatureGroup().addTo(STATE.map);
-  const drawCtrl = new L.Control.Draw({
+  STATE.drawControl = new L.Control.Draw({
     edit: { featureGroup: STATE.drawnItems },
     draw: {
-      polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: "#38bdf8", weight: 2.5 } },
+      polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: "#22d3ee", weight: 2.5 } },
       rectangle: { shapeOptions: { color: "#10b981", weight: 2.5 } },
       polyline: false, circle: false, marker: false, circlemarker: false,
     },
   });
-  STATE.map.addControl(drawCtrl);
+  STATE.map.addControl(STATE.drawControl);
 
   STATE.map.on(L.Draw.Event.CREATED, (e) => {
     STATE.drawnItems.clearLayers();
     STATE.drawnItems.addLayer(e.layer);
     STATE.drawnGeoJSON = e.layer.toGeoJSON();
-    const badge = document.getElementById("drawnStatusBadge");
-    badge.style.display = "inline-flex";
-    badge.textContent = "Polygon drawn on map — ready to Save!";
+    STATE.inputPolyVisible = true;
+    document.getElementById("chkInputPoly").checked = true;
+    if (!STATE.map.hasLayer(STATE.drawnItems)) STATE.drawnItems.addTo(STATE.map);
+    _updateInputPolyButtons("Polygon drawn on map!");
     toast("Boundary drawn on map! Enter an Area Name and click Save.", "ok");
   });
 
   STATE.map.on(L.Draw.Event.DELETED, () => {
     STATE.drawnGeoJSON = null;
-    document.getElementById("drawnStatusBadge").style.display = "none";
+    _updateInputPolyButtons(null);
   });
 
   loadAllBoundariesOnMap();
   populateRasterKeysDropdown();
+}
+
+function _updateInputPolyButtons(labelText) {
+  const badge = document.getElementById("drawnStatusBadge");
+  const btnVis = document.getElementById("btnTogglePolyVis");
+  const btnClr = document.getElementById("btnClearPoly");
+  if (labelText) {
+    badge.style.display = "inline-flex";
+    badge.textContent = labelText;
+    btnVis.style.display = "inline-flex";
+    btnVis.textContent = STATE.inputPolyVisible ? "Hide Polygon" : "Show Polygon";
+    btnClr.style.display = "inline-flex";
+  } else {
+    badge.style.display = "none";
+    btnVis.style.display = "none";
+    btnClr.style.display = "none";
+  }
+}
+
+function toggleDrawImportMode() {
+  initMapIfNeeded();
+  STATE.drawImportEnabled = !STATE.drawImportEnabled;
+  const body = document.getElementById("drawImportPanelBody");
+  const btn = document.getElementById("btnToggleDrawPanel");
+  if (STATE.drawImportEnabled) {
+    body.style.display = "block";
+    btn.textContent = "Draw/Import: ON";
+    btn.className = "btn btn-sm btn-primary";
+    STATE.map.addControl(STATE.drawControl);
+  } else {
+    body.style.display = "none";
+    btn.textContent = "Draw/Import: OFF";
+    btn.className = "btn btn-sm";
+    STATE.map.removeControl(STATE.drawControl);
+  }
+}
+
+function toggleInputPolygonLayer() {
+  if (!STATE.map || !STATE.drawnItems) return;
+  const checked = document.getElementById("chkInputPoly").checked;
+  STATE.inputPolyVisible = checked;
+  if (checked) {
+    if (!STATE.map.hasLayer(STATE.drawnItems)) STATE.drawnItems.addTo(STATE.map);
+  } else {
+    if (STATE.map.hasLayer(STATE.drawnItems)) STATE.map.removeLayer(STATE.drawnItems);
+  }
+  const btnVis = document.getElementById("btnTogglePolyVis");
+  if (btnVis && btnVis.style.display !== "none") {
+    btnVis.textContent = checked ? "Hide Polygon" : "Show Polygon";
+  }
+}
+
+function toggleInputPolygonButton() {
+  const chk = document.getElementById("chkInputPoly");
+  chk.checked = !chk.checked;
+  toggleInputPolygonLayer();
+}
+
+function clearInputPolygon() {
+  if (STATE.drawnItems) STATE.drawnItems.clearLayers();
+  STATE.drawnGeoJSON = null;
+  document.getElementById("newAreaFiles").value = "";
+  _updateInputPolyButtons(null);
+}
+
+function previewUploadedGeoJson() {
+  const files = document.getElementById("newAreaFiles").files;
+  if (!files || files.length === 0) return;
+  const gjFile = Array.from(files).find((f) => /\.(geojson|json)$/i.test(f.name));
+  if (!gjFile) {
+    _updateInputPolyButtons(`${files.length} file(s) selected`);
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const obj = JSON.parse(reader.result);
+      initMapIfNeeded();
+      STATE.drawnItems.clearLayers();
+      const previewLyr = L.geoJSON(obj, { style: { color: "#22d3ee", weight: 2.5, fillOpacity: 0.18 } });
+      previewLyr.eachLayer((l) => STATE.drawnItems.addLayer(l));
+      STATE.inputPolyVisible = true;
+      document.getElementById("chkInputPoly").checked = true;
+      if (!STATE.map.hasLayer(STATE.drawnItems)) STATE.drawnItems.addTo(STATE.map);
+      if (STATE.drawnItems.getBounds().isValid()) {
+        STATE.map.fitBounds(STATE.drawnItems.getBounds(), { padding: [30, 30] });
+      }
+      _updateInputPolyButtons(`Imported: ${gjFile.name}`);
+      toast(`Previewing '${gjFile.name}' on map.`, "ok");
+    } catch (e) {
+      toast(`Could not preview GeoJSON: ${e.message}`, "error");
+    }
+  };
+  reader.readAsText(gjFile);
 }
 
 async function loadAllBoundariesOnMap() {
@@ -583,18 +681,17 @@ async function saveNewArea(runImmediately = false) {
     }
 
     toast(`Created area '${createdArea.name}' with optimized CV YAML (${createdArea.cv_profile})!`, "ok");
+    const chosenZoom = document.getElementById("mapImageryZoom").value || "18";
     STATE.activeAreaId = createdArea.area_id;
-    STATE.drawnGeoJSON = null;
-    if (STATE.drawnItems) STATE.drawnItems.clearLayers();
-    document.getElementById("drawnStatusBadge").style.display = "none";
+    clearInputPolygon();
     document.getElementById("newAreaName").value = "";
-    document.getElementById("newAreaFiles").value = "";
 
     await refreshAll();
     if (runImmediately) {
       switchTab("runner");
       document.getElementById("runAreaSelect").value = createdArea.area_id;
       document.getElementById("runCvProfile").value = createdArea.cv_profile || "default";
+      document.getElementById("runImageryZoom").value = chosenZoom;
       document.getElementById("runS1").checked = true;
       document.getElementById("runS2").checked = true;
       document.getElementById("runS3").checked = true;
@@ -769,6 +866,7 @@ async function launchPipeline() {
         area_id: areaId,
         sections,
         cv_profile: document.getElementById("runCvProfile").value || "default",
+        imagery_zoom: Number(document.getElementById("runImageryZoom").value || 18),
       }),
     });
     STATE.activeJobId = res.job.job_id;

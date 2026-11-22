@@ -123,6 +123,7 @@
             <h4>Vector Layers (Active Area)</h4>
             <div class="check-list">
               <label class="check-item"><input type="checkbox" id="chkBoundaries" checked onchange="toggleBoundariesLayer()" /><span class="swatch" style="background:#38bdf8;"></span> All Active Area Boundaries</label>
+              <label class="check-item"><input type="checkbox" id="chkInputPoly" checked onchange="toggleInputPolygonLayer()" /><span class="swatch" style="background:#22d3ee;"></span> Drawn / Imported Input Polygon</label>
               <label class="check-item"><input type="checkbox" id="chkFootprints" onchange="toggleVectorLayer('footprints')" /><span class="swatch" style="background:#94a3b8;"></span> S1: Building Footprints</label>
               <label class="check-item"><input type="checkbox" id="chkUsable" onchange="toggleVectorLayer('usable_rooftops')" /><span class="swatch" style="background:#10b981;"></span> S2: Net Usable Rooftops</label>
               <label class="check-item"><input type="checkbox" id="chkObstacles" onchange="toggleVectorLayer('obstacles')" /><span class="swatch" style="background:#ef4444;"></span> S2: Physical Obstacles</label>
@@ -147,33 +148,46 @@
           </div>
 
           <div class="drawer-block">
-            <h4>Define New Area (Draw or Upload)</h4>
-            <div class="form-row">
-              <label>Area Name *</label>
-              <input type="text" id="newAreaName" placeholder="e.g. North Industrial Zone" />
+            <div class="flex-row" style="justify-content:space-between;margin-bottom:8px;">
+              <h4 style="margin-bottom:0;">Define New Area (Draw / Import)</h4>
+              <button class="btn btn-sm btn-primary" id="btnToggleDrawPanel" onclick="toggleDrawImportMode()">Draw/Import: ON</button>
             </div>
-            <div class="form-row">
-              <label>Source Mode</label>
-              <div style="font-size:11.5px;color:#94a3b8;line-height:1.4;">
-                Use the <b>Polygon / Rectangle tool</b> on the top-left of the map to draw, OR upload a Shapefile (`.zip` / `.shp+.dbf+.shx+.prj`), `.geojson`, or `.gpkg`:
+            <div id="drawImportPanelBody">
+              <div class="form-row">
+                <label>Area Name *</label>
+                <input type="text" id="newAreaName" placeholder="e.g. North Industrial Zone" />
               </div>
-              <input type="file" id="newAreaFiles" multiple accept=".shp,.dbf,.shx,.prj,.cpg,.geojson,.json,.gpkg,.zip" style="margin-top:6px;font-size:11.5px;" />
-              <div id="drawnStatusBadge" class="pill pill-info" style="margin-top:6px;display:none;">Polygon drawn on map!</div>
-            </div>
-            <div class="form-row">
-              <label>Area Type (Auto-Optimizes CV YAML)</label>
-              <div id="mapAreaTypeChecks" class="check-grid"></div>
-            </div>
-            <div class="form-row">
-              <label>Roof Traits</label>
-              <div id="mapTraitChecks" class="check-list"></div>
-            </div>
-            <div style="font-size:11px;color:#7dd3fc;margin-bottom:8px;">
-              Satellite imagery automatically uses <b>Zoom 19</b> when sharp tiles exist, otherwise <b>Zoom 18</b>.
-            </div>
-            <div class="flex-row" style="margin-top:4px;">
-              <button class="btn btn-primary" style="flex:1;justify-content:center;" onclick="saveNewArea(false)">Save Area</button>
-              <button class="btn btn-success" style="flex:1;justify-content:center;" onclick="saveNewArea(true)">Save & Run 0–100</button>
+              <div class="form-row">
+                <label>Draw on Map OR Upload Boundary</label>
+                <div style="font-size:11.5px;color:#94a3b8;line-height:1.4;">
+                  Use the <b>Polygon / Rectangle tool</b> on the top-left of the map to draw, OR upload `.zip` / `.shp` / `.geojson` / `.gpkg`:
+                </div>
+                <input type="file" id="newAreaFiles" multiple accept=".shp,.dbf,.shx,.prj,.cpg,.geojson,.json,.gpkg,.zip" onchange="previewUploadedGeoJson()" style="margin-top:6px;font-size:11.5px;" />
+                <div class="flex-row" style="margin-top:6px;">
+                  <div id="drawnStatusBadge" class="pill pill-info" style="display:none;">Input polygon ready</div>
+                  <button class="btn btn-sm" id="btnTogglePolyVis" onclick="toggleInputPolygonButton()" style="display:none;">Hide Polygon</button>
+                  <button class="btn btn-sm btn-danger" id="btnClearPoly" onclick="clearInputPolygon()" style="display:none;">Clear</button>
+                </div>
+              </div>
+              <div class="form-row">
+                <label>Area Type (Auto-Optimizes CV YAML)</label>
+                <div id="mapAreaTypeChecks" class="check-grid"></div>
+              </div>
+              <div class="form-row">
+                <label>Roof Traits</label>
+                <div id="mapTraitChecks" class="check-list"></div>
+              </div>
+              <div class="form-row">
+                <label>Satellite Imagery Resolution (Section 1)</label>
+                <select id="mapImageryZoom">
+                  <option value="18" selected>Zoom 18 — Fast &amp; Standard (~0.48 m/px)</option>
+                  <option value="19">Zoom 19 — Ultra-HD (~0.24 m/px, auto-fallback to 18)</option>
+                </select>
+              </div>
+              <div class="flex-row" style="margin-top:4px;">
+                <button class="btn btn-primary" style="flex:1;justify-content:center;" onclick="saveNewArea(false)">Save Area</button>
+                <button class="btn btn-success" style="flex:1;justify-content:center;" onclick="saveNewArea(true)">Save &amp; Run 0–100</button>
+              </div>
             </div>
           </div>
         </aside>
@@ -198,9 +212,18 @@
                 <label class="check-item"><input type="checkbox" id="runS3" checked /> <b>Section 3:</b> Solar Physics, PV Yield &amp; Getis-Ord Gi* Hotspots</label>
               </div>
             </div>
-            <div class="form-row" style="margin-bottom:14px;">
-              <label>Section 2 CV Parameter Profile (YAML)</label>
-              <select id="runCvProfile"></select>
+            <div class="grid-eq" style="margin-bottom:14px;">
+              <div class="form-row" style="margin-bottom:0;">
+                <label>Section 1 Satellite Imagery Zoom</label>
+                <select id="runImageryZoom">
+                  <option value="18" selected>Zoom 18 — Fast &amp; Standard (~0.48 m/px)</option>
+                  <option value="19">Zoom 19 — Ultra-HD (~0.24 m/px, fallback 18)</option>
+                </select>
+              </div>
+              <div class="form-row" style="margin-bottom:0;">
+                <label>Section 2 CV Parameter Profile (YAML)</label>
+                <select id="runCvProfile"></select>
+              </div>
             </div>
             <div class="flex-row">
               <button class="btn btn-success" id="btnStartJob" onclick="launchPipeline()">Run Selected Pipeline</button>

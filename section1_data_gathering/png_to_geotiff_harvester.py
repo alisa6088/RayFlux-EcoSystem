@@ -102,7 +102,13 @@ def harvest_esri_png_to_geotiff(
     """Downloads Esri World Imagery PNG tiles over the AOI, stitches them into a raster canvas,
     georeferences in EPSG:3857, and warps into the metric target CRS (`rfx_s01_ras_ortho_rgb.tif`)."""
     west, south, east, north = aoi.bbox_wgs84
-    zoom = detect_best_esri_zoom(aoi.bbox_wgs84, preferred_zoom=config.imagery_zoom)
+    requested_zoom = int(config.imagery_zoom)
+    if requested_zoom <= 18:
+        zoom = 18
+    else:
+        zoom = detect_best_esri_zoom(aoi.bbox_wgs84, preferred_zoom=19, min_zoom=18)
+        if zoom < 19:
+            print("[Section 1 | Esri Ortho] Warning: Zoom 19 imagery unavailable/blank for this AOI — falling back to Zoom 18.")
     tiles = list(mercantile.tiles(west, south, east, north, zoom))
 
     xs = [t.x for t in tiles]
