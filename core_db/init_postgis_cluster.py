@@ -39,31 +39,49 @@ PG_DATABASE = os.getenv("RFX_PG_DATABASE", "rayflux_spatial_db")
 PG_SCHEMA = os.getenv("RFX_PG_SCHEMA", "public")
 
 
+def _pg_exe_name(base: str) -> str:
+    return f"{base}.exe" if os.name == "nt" else base
+
+
 def discover_postgres_bin_dir() -> Path:
     """Dynamically discovers the PostgreSQL `bin/` directory containing `initdb` and `pg_ctl`
-    from `RFX_PG_BIN_DIR`, system PATH, or standard installation directories."""
+    from `RFX_PG_BIN_DIR`, system PATH, or standard cross-platform installation directories."""
+    initdb_name = _pg_exe_name("initdb")
+
     env_bin = os.getenv("RFX_PG_BIN_DIR")
-    if env_bin and (Path(env_bin) / "initdb.exe").exists():
+    if env_bin and (Path(env_bin) / initdb_name).exists():
         return Path(env_bin)
 
     which_initdb = shutil.which("initdb")
     if which_initdb:
         return Path(which_initdb).resolve().parent
 
-    # Auto-discover across mounted drives without hardcoding a specific machine path
-    anchor_drive = Path(PROJECT_ROOT.anchor)
-    candidate_roots = [
-        anchor_drive / "postgresql16.8" / "install" / "bin",
-        anchor_drive / "postgresql" / "install" / "bin",
-        Path(os.environ.get("ProgramFiles", "")) / "PostgreSQL",
-    ]
+    # Cross-platform standard installation discovery (Windows, Linux, macOS)
+    candidate_roots = []
+    if os.name == "nt":
+        anchor_drive = Path(PROJECT_ROOT.anchor)
+        candidate_roots.extend([
+            anchor_drive / "postgresql16.8" / "install" / "bin",
+            anchor_drive / "postgresql" / "install" / "bin",
+            Path(os.environ.get("ProgramFiles", "")) / "PostgreSQL",
+        ])
+    else:
+        candidate_roots.extend([
+            Path("/usr/lib/postgresql"),
+            Path("/usr/local/pgsql/bin"),
+            Path("/opt/homebrew/opt"),
+            Path("/usr/local/opt"),
+            Path("/Applications/Postgres.app/Contents/Versions/latest/bin"),
+        ])
+
     for cand in candidate_roots:
-        if (cand / "initdb.exe").exists():
+        if (cand / initdb_name).exists():
             return cand
         if cand.exists() and cand.is_dir():
-            for sub in sorted(cand.glob("*/bin"), reverse=True):
-                if (sub / "initdb.exe").exists():
-                    return sub
+            for pattern in ("*/bin", "postgresql*/bin"):
+                for sub in sorted(cand.glob(pattern), reverse=True):
+                    if (sub / initdb_name).exists():
+                        return sub
 
     raise FileNotFoundError(
         "PostgreSQL binaries (`initdb`, `pg_ctl`) not found. Set `RFX_PG_BIN_DIR` in `.env` or add PostgreSQL `bin/` to PATH."
@@ -83,8 +101,8 @@ def ensure_postgis_cluster_running() -> dict:
     CREDENTIALS_JSON.parent.mkdir(parents=True, exist_ok=True)
 
     pg_bin_dir = discover_postgres_bin_dir()
-    initdb_exe = pg_bin_dir / "initdb.exe"
-    pg_ctl_exe = pg_bin_dir / "pg_ctl.exe"
+    initdb_exe = pg_bin_dir / _pg_exe_name("initdb")
+    pg_ctl_exe = pg_bin_dir / _pg_exe_name("pg_ctl")
 
     # 1. Initialize cluster if PG_VERSION does not exist
     pg_version_file = CLUSTER_DIR / "PG_VERSION"

@@ -61,6 +61,8 @@ database/maps/**/*.png
 
 # User-created dynamic area profiles & transient runtime registries
 config/profiles/area_*.yaml
+database/core/rfx_areas_registry.json
+database/core/rfx_db_asset_catalog.json
 
 # Case study input GIS binaries (user-supplied per run)
 data/case_study_aoi/*.shp
