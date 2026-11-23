@@ -42,6 +42,26 @@ database/tables/**/*.xlsx
 database/tables/**/*.csv
 database/maps/**/*.png
 
+# Blanket ignore for all raster datasets anywhere in the repository
+*.tif
+*.tiff
+*.geotiff
+*.ovr
+*.tfw
+*.aux.xml
+*.vrt
+
+# Heavy binary GIS & array files
+*.gpkg
+*.parquet
+*.feather
+*.nc
+*.hdf5
+*.h5
+
+# User-created dynamic area profiles & transient runtime registries
+config/profiles/area_*.yaml
+
 # Case study input GIS binaries (user-supplied per run)
 data/case_study_aoi/*.shp
 data/case_study_aoi/*.shx
