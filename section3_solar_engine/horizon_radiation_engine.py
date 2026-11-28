@@ -40,9 +40,29 @@ def build_azimuth_directions(n_directions: int) -> np.ndarray:
     return dirs
 
 
+def _build_dsm_block_max(dsm: np.ndarray, block_size: int = 16) -> np.ndarray:
+    """Builds a 2D coarse max-elevation pyramid with 1-px halo so any 2x2 bilinear sample
+    whose (x0, y0) falls in block (br, bc) is strictly <= block_max[br, bc]."""
+    h, w = dsm.shape
+    bh = (h + block_size - 1) // block_size
+    bw = (w + block_size - 1) // block_size
+    bmax = np.full((bh, bw), -1.0e9, dtype=np.float32)
+    safe_dsm = np.where(np.isnan(dsm), -1.0e9, dsm).astype(np.float32)
+    for br in range(bh):
+        r0 = br * block_size
+        r1 = min(h, r0 + block_size + 1)
+        for bc in range(bw):
+            c0 = bc * block_size
+            c1 = min(w, c0 + block_size + 1)
+            bmax[br, bc] = float(safe_dsm[r0:r1, c0:c1].max())
+    return bmax
+
+
 @njit(parallel=True, cache=True)
 def _compute_tile_horizon_and_radiation(
     dsm: np.ndarray,
+    dsm_block_max: np.ndarray,
+    block_size: int,
     dsm_max: float,
     active_tile: np.ndarray,
     row_off: int,
@@ -59,7 +79,8 @@ def _compute_tile_horizon_and_radiation(
     month_scale_arr: np.ndarray,
     min_rad_thresh: float,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Computes exact 32-dir bilinear horizon, SVF, 12 monthly + annual kWh/m², shadow %, and suitability."""
+    """Computes exact 32-dir bilinear horizon (accelerated via 16x16 block-max upper-bound skipping),
+    SVF, 12 monthly + annual kWh/m², shadow %, and suitability."""
     tile_h, tile_w = active_tile.shape
     full_rows, full_cols = dsm.shape
     n_dir = directions.shape[0]
@@ -67,6 +88,7 @@ def _compute_tile_horizon_and_radiation(
     max_steps = int(max_distance / step_size)
     inv_cell = 1.0 / cell_size
     deg_to_rad = np.float32(np.pi / 180.0)
+    bsize_f = float(block_size)
 
     horizon_out = np.full((n_dir, tile_h, tile_w), -9999.0, dtype=np.float32)
     svf_out = np.full((tile_h, tile_w), -9999.0, dtype=np.float32)
@@ -88,61 +110,94 @@ def _compute_tile_horizon_and_radiation(
             max_dz_possible = dsm_max - z0
             svf_acc = 0.0
 
-            # 1. Exact 32-direction bilinear ray-marching
+            # 1. Exact 32-direction bilinear ray-marching with exact 16x16 block-max skipping
+            # Both SVF (max(0, hor)) and daytime solar shadowing (sun_alt > 0) depend strictly on horizon >= 0 deg.
             for d in range(n_dir):
                 dx = directions[d, 0]
                 dy = directions[d, 1]
-                max_slope = -1.0e9
+                dr_step = dy * step_size * inv_cell
+                dc_step = dx * step_size * inv_cell
+                max_slope = 0.0
 
-                for step in range(1, max_steps + 1):
-                    dist = step * step_size
-                    inv_dist = 1.0 / dist
+                if max_dz_possible > 0.0:
+                    step = 1
+                    while step <= max_steps:
+                        dist = step * step_size
+                        inv_dist = 1.0 / dist
 
-                    # Exact mathematical upper-bound early exit: no pixel farther away can beat max_slope
-                    if max_dz_possible * inv_dist <= max_slope:
-                        break
-
-                    fx = gi + (dy * dist * inv_cell)
-                    fy = gj + (dx * dist * inv_cell)
-
-                    x0 = int(fx)
-                    y0 = int(fy)
-                    if fx < 0.0 or fy < 0.0:
-                        break
-                    x1 = x0 + 1
-                    y1 = y0 + 1
-                    if x1 >= full_rows or y1 >= full_cols:
-                        break
-
-                    q11 = dsm[x0, y0]
-                    q21 = dsm[x1, y0]
-                    q12 = dsm[x0, y1]
-                    q22 = dsm[x1, y1]
-
-                    if (q11 != q11) or (q21 != q21) or (q12 != q12) or (q22 != q22):
-                        continue
-
-                    wx = fx - x0
-                    wy = fy - y0
-                    z = (
-                        q11 * (1.0 - wx) * (1.0 - wy)
-                        + q21 * wx * (1.0 - wy)
-                        + q12 * (1.0 - wx) * wy
-                        + q22 * wx * wy
-                    )
-
-                    slope = (z - z0) * inv_dist
-                    if slope > max_slope:
-                        max_slope = slope
-                        if max_slope >= 57.29:  # >= 89.0 deg
+                        # Exact global upper-bound early exit
+                        if max_dz_possible * inv_dist <= max_slope:
                             break
 
-                hor_deg = degrees(atan(max_slope)) if max_slope > -1.0e8 else 0.0
+                        fx = gi + (dr_step * step)
+                        fy = gj + (dc_step * step)
+
+                        if fx < 0.0 or fy < 0.0:
+                            break
+                        x0 = int(fx)
+                        y0 = int(fy)
+                        x1 = x0 + 1
+                        y1 = y0 + 1
+                        if x1 >= full_rows or y1 >= full_cols:
+                            break
+
+                        # Exact 16x16 block upper-bound skip: if max elevation in this entire block
+                        # cannot beat `max_slope` at current `dist`, safely jump to block exit.
+                        br = x0 // block_size
+                        bc = y0 // block_size
+                        if (dsm_block_max[br, bc] - z0) * inv_dist <= max_slope:
+                            skip = max_steps
+                            if dr_step > 1.0e-9:
+                                s_r = int(((br + 1) * bsize_f - fx) / dr_step)
+                                if s_r < skip:
+                                    skip = s_r
+                            elif dr_step < -1.0e-9:
+                                s_r = int((fx - br * bsize_f) / (-dr_step))
+                                if s_r < skip:
+                                    skip = s_r
+                            if dc_step > 1.0e-9:
+                                s_c = int(((bc + 1) * bsize_f - fy) / dc_step)
+                                if s_c < skip:
+                                    skip = s_c
+                            elif dc_step < -1.0e-9:
+                                s_c = int((fy - bc * bsize_f) / (-dc_step))
+                                if s_c < skip:
+                                    skip = s_c
+                            if skip < 1:
+                                skip = 1
+                            step += skip
+                            continue
+
+                        q11 = dsm[x0, y0]
+                        q21 = dsm[x1, y0]
+                        q12 = dsm[x0, y1]
+                        q22 = dsm[x1, y1]
+
+                        if (q11 != q11) or (q21 != q21) or (q12 != q12) or (q22 != q22):
+                            step += 1
+                            continue
+
+                        wx = fx - x0
+                        wy = fy - y0
+                        z = (
+                            q11 * (1.0 - wx) * (1.0 - wy)
+                            + q21 * wx * (1.0 - wy)
+                            + q12 * (1.0 - wx) * wy
+                            + q22 * wx * wy
+                        )
+
+                        slope = (z - z0) * inv_dist
+                        if slope > max_slope:
+                            max_slope = slope
+                            if max_slope >= 57.29:  # >= 89.0 deg
+                                break
+                        step += 1
+
+                hor_deg = degrees(atan(max_slope)) if max_slope > 0.0 else 0.0
                 horizon_out[d, ti, tj] = hor_deg
 
-                # Hemispherical SVF: clamp negative horizon angles to 0 deg
-                eff_hor = hor_deg if hor_deg > 0.0 else 0.0
-                c = cos(eff_hor * deg_to_rad)
+                # Hemispherical SVF
+                c = cos(hor_deg * deg_to_rad)
                 svf_acc += c * c
 
             svf = np.float32(svf_acc / n_dir)
@@ -205,7 +260,9 @@ def run_horizon_and_radiation(
         dsm[dsm == dsm_nodata] = np.nan
 
     dsm_max = float(np.nanmax(dsm))
-    print(f"[S3] Loaded DSM: {height} x {width} px ({cell_size:.2f} m), max elevation = {dsm_max:.2f} m")
+    block_size = 16
+    dsm_block_max = _build_dsm_block_max(dsm, block_size=block_size)
+    print(f"[S3] Loaded DSM: {height} x {width} px ({cell_size:.2f} m), max elevation = {dsm_max:.2f} m (16x16 block pyramid ready)")
 
     # 2. Build active computation mask (rooftop pixels + 1-px buffer, or full DSM if rooftop_only_mask=False)
     if hz.rooftop_only_mask:
@@ -321,6 +378,8 @@ def run_horizon_and_radiation(
                 active_tiles += 1
                 hor_t, svf_t, mon_t, ann_t, shd_t, suit_t = _compute_tile_horizon_and_radiation(
                     dsm=dsm,
+                    dsm_block_max=dsm_block_max,
+                    block_size=block_size,
                     dsm_max=dsm_max,
                     active_tile=active_tile,
                     row_off=row_off,
