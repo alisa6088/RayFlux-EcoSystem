@@ -536,22 +536,40 @@ function locateBuilding(lat, lon, bldgId) {
   }, 200);
 }
 
+function getVectorOpacityScale() {
+  const el = document.getElementById("vectorOpacity");
+  return el ? Number(el.value) / 100.0 : 0.8;
+}
+
 function styleForLayer(layerKey, feature) {
   const p = feature.properties || {};
-  if (layerKey === "footprints") return { color: "#94a3b8", weight: 1, fillOpacity: 0.25 };
-  if (layerKey === "usable_rooftops") return { color: "#10b981", weight: 1, fillOpacity: 0.45 };
-  if (layerKey === "obstacles") return { color: "#ef4444", weight: 0.8, fillOpacity: 0.78 };
-  if (layerKey === "shadows") return { color: "#2563eb", weight: 0.5, fillOpacity: 0.50 };
+  const alpha = getVectorOpacityScale();
+  const strokeAlpha = Math.min(1.0, alpha > 0 ? Math.max(0.25, alpha) : 0.15);
+  if (layerKey === "footprints") return { color: "#94a3b8", weight: 1, opacity: strokeAlpha, fillOpacity: 0.40 * alpha };
+  if (layerKey === "usable_rooftops") return { color: "#10b981", weight: 1, opacity: strokeAlpha, fillOpacity: 0.65 * alpha };
+  if (layerKey === "obstacles") return { color: "#ef4444", weight: 0.8, opacity: strokeAlpha, fillOpacity: 0.90 * alpha };
+  if (layerKey === "shadows") return { color: "#2563eb", weight: 0.5, opacity: strokeAlpha, fillOpacity: 0.65 * alpha };
   if (layerKey === "hotspots") {
     const c = GI_COLORS[p.gi_cluster_class] || "#64748b";
-    return { color: "#0f172a", fillColor: c, weight: 0.6, fillOpacity: p.gi_cluster_class === "Not Significant" ? 0.35 : 0.85 };
+    const baseFill = p.gi_cluster_class === "Not Significant" ? 0.45 : 0.95;
+    return { color: "#0f172a", fillColor: c, weight: 0.6, opacity: strokeAlpha, fillOpacity: baseFill * alpha };
   }
   if (layerKey === "hotspots_yield") {
     const v = Number(p.elec_yield_mwh_yr || 0);
     const col = v >= 2000 ? "#fef08a" : v >= 800 ? "#f59e0b" : v >= 300 ? "#ea580c" : v >= 100 ? "#db2777" : "#6d28d9";
-    return { color: "#0f172a", fillColor: col, weight: 0.5, fillOpacity: 0.85 };
+    return { color: "#0f172a", fillColor: col, weight: 0.5, opacity: strokeAlpha, fillOpacity: 0.95 * alpha };
   }
-  return { color: "#38bdf8", weight: 1, fillOpacity: 0.3 };
+  return { color: "#38bdf8", weight: 1, opacity: strokeAlpha, fillOpacity: 0.45 * alpha };
+}
+
+function updateVectorOpacity() {
+  const val = Number(document.getElementById("vectorOpacity").value);
+  document.getElementById("vectorOpacityVal").textContent = `${val}%`;
+  Object.entries(STATE.vectorLayers).forEach(([layerKey, geoLayer]) => {
+    if (geoLayer && typeof geoLayer.setStyle === "function") {
+      geoLayer.setStyle((feature) => styleForLayer(layerKey, feature));
+    }
+  });
 }
 
 function popupHtmlForFeature(p) {

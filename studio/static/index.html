@@ -131,6 +131,10 @@
               <label class="check-item"><input type="checkbox" id="chkYield" onchange="toggleVectorLayer('hotspots_yield')" /><span class="swatch" style="background:#f59e0b;"></span> S3: PV Yield Heatmap (MWh/yr)</label>
               <label class="check-item"><input type="checkbox" id="chkHotspots" onchange="toggleVectorLayer('hotspots')" /><span class="swatch" style="background:#dc2626;"></span> S3: Getis-Ord Gi* Hotspots</label>
             </div>
+            <div class="flex-row" style="justify-content:space-between;font-size:11.5px;color:#94a3b8;margin-top:8px;padding-top:6px;border-top:1px solid rgba(148,163,184,0.14);">
+              <span>Vector Opacity: <b id="vectorOpacityVal">80%</b></span>
+              <input type="range" id="vectorOpacity" min="0" max="100" value="80" oninput="updateVectorOpacity()" onchange="updateVectorOpacity()" style="width:130px;" />
+            </div>
           </div>
 
           <div class="drawer-block">
@@ -141,8 +145,8 @@
               </select>
             </div>
             <div class="flex-row" style="justify-content:space-between;font-size:11.5px;color:#94a3b8;">
-              <span>Opacity: <b id="rasterOpacityVal">80%</b></span>
-              <input type="range" id="rasterOpacity" min="10" max="100" value="80" oninput="updateRasterOpacity()" style="width:140px;" />
+              <span>Raster Opacity: <b id="rasterOpacityVal">80%</b></span>
+              <input type="range" id="rasterOpacity" min="0" max="100" value="80" oninput="updateRasterOpacity()" onchange="updateRasterOpacity()" style="width:130px;" />
             </div>
             <div id="rasterRangeNote" style="font-size:11px;color:#7dd3fc;margin-top:5px;"></div>
           </div>
