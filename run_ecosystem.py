@@ -101,6 +101,22 @@ def main() -> int:
         help="Override Case Study AOI: path to .shp/.geojson/.gpkg or 'west,south,east,north' WGS84 bbox.",
     )
     parser.add_argument(
+        "--footprint-mode",
+        type=str,
+        choices=["auto", "user_footprints", "wfs_only"],
+        default=None,
+        help=(
+            "Section 1 footprint source mode: 'auto' (multi-polygon input file = keep user footprints + "
+            "transfer WFS heights; single polygon = AOI boundary), 'user_footprints', or 'wfs_only'."
+        ),
+    )
+    parser.add_argument(
+        "--user-footprints",
+        type=str,
+        default=None,
+        help="Explicit path to user building footprints (.shp/.geojson/.gpkg) whose heights will be enriched from overlapping WFS 3D buildings.",
+    )
+    parser.add_argument(
         "--area-id",
         type=str,
         default=None,
@@ -163,6 +179,13 @@ def main() -> int:
 
     if args.aoi:
         cfg.aoi_source = _parse_aoi_arg(args.aoi)
+    if args.footprint_mode:
+        cfg.footprint_mode = args.footprint_mode
+    if args.user_footprints:
+        p = Path(args.user_footprints)
+        cfg.user_footprints_source = p if p.is_absolute() else (PROJECT_ROOT / p).resolve()
+        if not args.footprint_mode:
+            cfg.footprint_mode = "user_footprints"
     if args.cv_profile:
         from studio.cv_profile_engine import resolve_profile_path
         cfg.cv_hyperparams_yaml = resolve_profile_path(args.cv_profile)

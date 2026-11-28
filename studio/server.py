@@ -59,6 +59,7 @@ class DrawnAreaRequest(BaseModel):
     imagery_gsd_m: float = 0.45
     dsm_resolution_m: float = 0.50
     min_building_area_m2: float = 50.0
+    footprint_mode: str = "wfs_only"
 
 
 class UpdateAreaRequest(BaseModel):
@@ -187,6 +188,7 @@ def api_create_drawn_area(req: DrawnAreaRequest):
             imagery_gsd_m=req.imagery_gsd_m,
             dsm_resolution_m=req.dsm_resolution_m,
             min_building_area_m2=req.min_building_area_m2,
+            footprint_mode=req.footprint_mode,
         )
         return {"area": created}
     except Exception as exc:
@@ -204,6 +206,7 @@ async def api_upload_area(
     imagery_gsd_m: float = Form(0.45),
     dsm_resolution_m: float = Form(0.50),
     min_building_area_m2: float = Form(50.0),
+    footprint_mode: str = Form("auto"),
     files: List[UploadFile] = File(...),
 ):
     try:
@@ -223,6 +226,7 @@ async def api_upload_area(
             imagery_gsd_m=imagery_gsd_m,
             dsm_resolution_m=dsm_resolution_m,
             min_building_area_m2=min_building_area_m2,
+            footprint_mode=footprint_mode,
         )
         return {"area": created}
     except Exception as exc:

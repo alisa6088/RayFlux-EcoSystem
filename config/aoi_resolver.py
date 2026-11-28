@@ -11,7 +11,7 @@ and boundary geometries.
 from dataclasses import dataclass
 import math
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 import geopandas as gpd
 from shapely.geometry import Polygon, MultiPolygon, box
 from shapely.ops import unary_union
@@ -33,6 +33,8 @@ class ResolvedAOI:
     boundary_utm: Union[Polygon, MultiPolygon]
     center_lon: float
     center_lat: float
+    input_feature_count: int = 0
+    source_path: Optional[Path] = None
 
 
 def infer_utm_epsg_from_lonlat(lon: float, lat: float) -> str:
@@ -94,6 +96,8 @@ def resolve_case_study_aoi(
             boundary_utm=poly_utm,
             center_lon=center_lon,
             center_lat=center_lat,
+            input_feature_count=len(gdf),
+            source_path=path.resolve(),
         )
 
     elif isinstance(aoi_input, (tuple, list)) and len(aoi_input) == 4:

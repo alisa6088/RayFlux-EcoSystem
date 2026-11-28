@@ -159,7 +159,10 @@ class EcosystemConfig:
     min_building_area_m2: float = 50.0
     default_building_height_m: float = 9.6
 
-    # Section 1 Parameters (3D LoD1 WFS + High-Res Satellite Imagery + Synthetic DSM)
+    # Section 1 Parameters (3D LoD1 WFS + User Footprints + High-Res Satellite Imagery + Synthetic DSM)
+    footprint_mode: str = "auto"  # "auto" | "user_footprints" | "wfs_only"
+    user_footprints_source: Optional[Union[Path, str]] = None
+    wfs_height_nearest_max_m: float = 5.0
     tum_wfs_base_url: str = "https://tubvsig-so2sat-vm1.srv.mwn.de"
     tum_grid_step_deg: float = 0.04
     imagery_provider: str = "esri"
@@ -214,6 +217,8 @@ class EcosystemConfig:
         solar_yaml: Optional[Path] = None,
         dsm_resolution_m: float = 0.50,
         min_building_area_m2: float = 50.0,
+        footprint_mode: str = "auto",
+        user_footprints_source: Optional[Union[Path, str]] = None,
     ) -> "EcosystemConfig":
         """Constructs an isolated EcosystemConfig for a specific registered area."""
         pg = PostGISConfig(schema=postgis_schema)
@@ -223,6 +228,8 @@ class EcosystemConfig:
             target_crs=target_crs,
             dsm_resolution_m=dsm_resolution_m,
             min_building_area_m2=min_building_area_m2,
+            footprint_mode=footprint_mode,
+            user_footprints_source=user_footprints_source,
             cv_hyperparams_yaml=cv_yaml or (PROJECT_ROOT / "config" / "cv_hyperparameters.yaml"),
             solar_params_yaml=solar_yaml or (PROJECT_ROOT / "config" / "solar_parameters.yaml"),
             postgis=pg,

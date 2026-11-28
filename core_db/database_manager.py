@@ -31,6 +31,8 @@ SHP_COLUMN_MAP: Dict[str, str] = {
     "gross_area_m2": "gross_area",
     "building_height_m": "height_m",
     "height_variance": "height_var",
+    "height_source": "h_source",
+    "wfs_overlap_pct": "wfs_ov_pct",
     "num_floors": "floors",
     "centroid_x_utm": "cx_utm",
     "centroid_y_utm": "cy_utm",

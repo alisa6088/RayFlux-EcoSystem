@@ -456,8 +456,10 @@ function previewUploadedGeoJson() {
       if (STATE.drawnItems.getBounds().isValid()) {
         STATE.map.fitBounds(STATE.drawnItems.getBounds(), { padding: [30, 30] });
       }
-      _updateInputPolyButtons(`Imported: ${gjFile.name}`);
-      toast(`Previewing '${gjFile.name}' on map.`, "ok");
+      const featCnt = obj.type === "FeatureCollection" && Array.isArray(obj.features) ? obj.features.length : 1;
+      const modeHint = featCnt > 1 ? `${featCnt} footprints (User Footprints + WFS Heights)` : `${gjFile.name} (AOI Boundary)`;
+      _updateInputPolyButtons(`Imported: ${modeHint}`);
+      toast(`Previewing '${gjFile.name}' (${featCnt} polygon${featCnt === 1 ? "" : "s"}) on map.`, "ok");
     } catch (e) {
       toast(`Could not preview GeoJSON: ${e.message}`, "error");
     }
@@ -488,8 +490,9 @@ async function loadAllBoundariesOnMap() {
       }),
       onEachFeature: (f, layer) => {
         const p = f.properties;
+        const modeLabel = p.footprint_mode === "user_footprints" ? "User Footprints + WFS Heights" : "WFS Direct";
         layer.bindPopup(
-          `<b>${p.name}</b><br/>ID: ${p.area_id}<br/>Types: ${p.area_types}<br/>` +
+          `<b>${p.name}</b><br/>ID: ${p.area_id}<br/>Mode: <b>${modeLabel}</b><br/>Types: ${p.area_types}<br/>` +
           `Area: ${p.area_km2} km² (${p.target_crs})<br/>Buildings: ${p.buildings_count}`
         );
         layer.on("click", () => {
@@ -555,7 +558,10 @@ function popupHtmlForFeature(p) {
   const rows = [];
   if (p.building_id !== undefined) rows.push(`<b>Building #${p.building_id}</b>`);
   if (p.obj_class) rows.push(`Class: <b>${p.obj_class}</b> (${fmtNum(p.area_m2, 1)} m²)`);
-  if (p.building_height_m !== undefined) rows.push(`Height: ${fmtNum(p.building_height_m, 1)} m`);
+  if (p.building_height_m !== undefined) {
+    const hSrc = p.height_source ? ` <span style="color:#94a3b8;font-size:11px;">(${p.height_source}${p.wfs_overlap_pct ? `, ${fmtNum(p.wfs_overlap_pct, 0)}% ov` : ""})</span>` : "";
+    rows.push(`Height: <b>${fmtNum(p.building_height_m, 1)} m</b>${hSrc}`);
+  }
   if (p.gross_area_m2 !== undefined) rows.push(`Gross Roof: ${fmtNum(p.gross_area_m2, 1)} m²`);
   if (p.usable_area_m2 !== undefined) rows.push(`Usable Roof: <b>${fmtNum(p.usable_area_m2, 1)} m²</b> (${fmtNum(p.usable_area_pct, 1)}%)`);
   if (p.obstacle_count !== undefined) rows.push(`Obstacles: ${p.obstacle_count} (${fmtNum(p.obstacle_area_m2, 1)} m²)`);
@@ -666,6 +672,7 @@ async function saveNewArea(runImmediately = false) {
     return;
   }
   const files = document.getElementById("newAreaFiles").files;
+  const footprintMode = (document.getElementById("newAreaFootprintMode")?.value || "auto");
   const areaTypes = getCheckedValues("mapAreaTypeChecks");
   const traits = getCheckedValues("mapTraitChecks");
   const gsd = 0.48;
@@ -681,10 +688,12 @@ async function saveNewArea(runImmediately = false) {
       fd.append("auto_generate_cv_yaml", "true");
       fd.append("imagery_gsd_m", String(gsd));
       fd.append("dsm_resolution_m", String(dsmRes));
+      fd.append("footprint_mode", footprintMode);
       for (const f of files) fd.append("files", f);
       const res = await api("/api/areas/upload", { method: "POST", body: fd });
       createdArea = res.area;
     } else if (STATE.drawnGeoJSON) {
+      const drawMode = footprintMode === "user_footprints" ? "user_footprints" : "wfs_only";
       const res = await api("/api/areas/draw", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -696,6 +705,7 @@ async function saveNewArea(runImmediately = false) {
           auto_generate_cv_yaml: true,
           imagery_gsd_m: gsd,
           dsm_resolution_m: dsmRes,
+          footprint_mode: drawMode,
         }),
       });
       createdArea = res.area;

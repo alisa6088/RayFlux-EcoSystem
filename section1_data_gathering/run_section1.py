@@ -51,8 +51,13 @@ def render_s01_overview_map(
         ax1.imshow(rgb, extent=extent, origin="upper")
 
     footprints_gdf.boundary.plot(ax=ax1, color="#38BDF8", linewidth=0.6)
+    has_user_fp = (
+        "height_source" in footprints_gdf.columns
+        and (footprints_gdf["height_source"] != "WFS_DIRECT").any()
+    )
+    fp_label = "User Footprints + WFS Heights" if has_user_fp else "TUM 3D Footprints"
     ax1.set_title(
-        f"1. High-Res Esri Orthomosaic + TUM 3D Footprints (N={len(footprints_gdf)})",
+        f"1. High-Res Esri Orthomosaic + {fp_label} (N={len(footprints_gdf)})",
         color="#F4F4F5",
         fontsize=11,
         weight="bold",
@@ -111,9 +116,9 @@ def run_section1(
     print(f"  Bounding Box (Metric) : {[round(x, 2) for x in aoi.bbox_utm]}")
     print("-" * 78)
 
-    # 1. Harvest TUM 3D LoD1 Building Footprints & Heights
+    # 1. Harvest 3D Footprints (or preserve User Footprints + transfer WFS 3D heights)
     harvester = TUM3DFootprintHarvester(config)
-    footprints_gdf = harvester.harvest_aoi_footprints(aoi)
+    footprints_gdf = harvester.harvest_or_enrich_footprints(aoi)
     db_mgr.save_vector_dataset(
         footprints_gdf,
         shp_path=config.db.s01_footprints_shp,

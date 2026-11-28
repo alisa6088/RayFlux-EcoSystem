@@ -149,6 +149,8 @@ class AreaRegistry:
         db_root_abs = PROJECT_ROOT / item["db_root"]
         cv_yaml = resolve_profile_path(item.get("cv_profile"))
         solar_yaml = PROJECT_ROOT / item.get("solar_config", "config/solar_parameters.yaml")
+        user_fp_rel = item.get("user_footprints_path")
+        user_fp_abs = (PROJECT_ROOT / user_fp_rel) if user_fp_rel else None
         return EcosystemConfig.for_area(
             aoi_source=aoi_abs,
             db_root=db_root_abs,
@@ -158,6 +160,8 @@ class AreaRegistry:
             solar_yaml=solar_yaml,
             dsm_resolution_m=float(item.get("dsm_resolution_m", 0.50)),
             min_building_area_m2=float(item.get("min_building_area_m2", 50.0)),
+            footprint_mode=item.get("footprint_mode", "auto"),
+            user_footprints_source=user_fp_abs,
         )
 
     def _inspect_section_status(self, item: Dict[str, Any]) -> Dict[str, Any]:
@@ -195,6 +199,7 @@ class AreaRegistry:
         imagery_gsd_m: float = 0.45,
         dsm_resolution_m: float = 0.50,
         min_building_area_m2: float = 50.0,
+        footprint_mode: str = "wfs_only",
     ) -> Dict[str, Any]:
         """Creates a new registered Area from a map-drawn GeoJSON Geometry/Feature/FeatureCollection."""
         data = self._load_raw()
@@ -223,8 +228,20 @@ class AreaRegistry:
         area_dir.mkdir(parents=True, exist_ok=True)
         geojson_path = area_dir / f"rfx_aoi_{area_id}.geojson"
         shp_path = area_dir / f"rfx_aoi_{area_id}.shp"
-        gdf.to_file(geojson_path, driver="GeoJSON")
-        gdf.to_file(shp_path, driver="ESRI Shapefile", encoding="utf-8")
+
+        eff_mode = (footprint_mode or "wfs_only").strip().lower()
+        user_fp_path: Optional[Path] = None
+        if eff_mode == "user_footprints":
+            user_fp_path = area_dir / f"rfx_user_footprints_{area_id}.gpkg"
+            gdf.to_file(user_fp_path, driver="GPKG")
+            hull = gdf.geometry.unary_union.convex_hull
+            env_gdf = gpd.GeoDataFrame({"area_id": [area_id], "name": [name]}, geometry=[hull], crs="EPSG:4326")
+            env_gdf.to_file(geojson_path, driver="GeoJSON")
+            env_gdf.to_file(shp_path, driver="ESRI Shapefile", encoding="utf-8")
+        else:
+            eff_mode = "wfs_only"
+            gdf.to_file(geojson_path, driver="GeoJSON")
+            gdf.to_file(shp_path, driver="ESRI Shapefile", encoding="utf-8")
 
         return self._finalize_area_creation(
             area_id=area_id,
@@ -238,6 +255,8 @@ class AreaRegistry:
             imagery_gsd_m=imagery_gsd_m,
             dsm_resolution_m=dsm_resolution_m,
             min_building_area_m2=min_building_area_m2,
+            footprint_mode=eff_mode,
+            user_footprints_path=user_fp_path,
         )
 
     def create_area_from_uploaded_files(
@@ -252,8 +271,12 @@ class AreaRegistry:
         imagery_gsd_m: float = 0.45,
         dsm_resolution_m: float = 0.50,
         min_building_area_m2: float = 50.0,
+        footprint_mode: str = "auto",
     ) -> Dict[str, Any]:
-        """Creates a new registered Area from uploaded .geojson, .gpkg, .shp (+sidecars), or .zip shapefile bundle."""
+        """Creates a new registered Area from uploaded .geojson, .gpkg, .shp (+sidecars), or .zip shapefile bundle.
+        When the uploaded file contains building footprints (`footprint_mode='user_footprints'` or
+        `footprint_mode='auto'` with >1 polygon), preserves the user's exact building footprints in
+        `rfx_user_footprints_<area_id>.gpkg` so Section 1 uses them directly and enriches heights from WFS overlap."""
         data = self._load_raw()
         base_id = _slugify(name)
         area_id = base_id
@@ -261,6 +284,9 @@ class AreaRegistry:
         while area_id in data:
             area_id = f"{base_id}_{idx}"
             idx += 1
+
+        requested_mode = (footprint_mode or "auto").strip().lower()
+        user_fp_path: Optional[Path] = None
 
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
@@ -284,19 +310,51 @@ class AreaRegistry:
             src_vec = candidates[0]
             gdf = gpd.read_file(src_vec)
             if gdf.empty:
-                raise ValueError("Uploaded boundary file contains zero geometries.")
+                raise ValueError("Uploaded boundary/footprint file contains zero geometries.")
             if gdf.crs is None:
                 gdf = gdf.set_crs("EPSG:4326")
-            gdf_wgs = gdf.to_crs("EPSG:4326")[["geometry"]].copy()
-            gdf_wgs["area_id"] = area_id
-            gdf_wgs["name"] = name
+
+            # Keep only polygon features for building/AOI work
+            gdf_poly = gdf[gdf.geometry.notnull() & ~gdf.geometry.is_empty].copy()
+            gdf_poly = gdf_poly[gdf_poly.geometry.geom_type.isin(["Polygon", "MultiPolygon"])].copy()
+            if gdf_poly.empty:
+                raise ValueError("Uploaded vector file contains no valid Polygon/MultiPolygon geometries.")
+
+            is_user_footprints = (
+                requested_mode == "user_footprints"
+                or (requested_mode == "auto" and len(gdf_poly) > 1)
+            )
+            eff_mode = "user_footprints" if is_user_footprints else "wfs_only"
 
             area_dir = AREAS_DATA_DIR / area_id
             area_dir.mkdir(parents=True, exist_ok=True)
             shp_path = area_dir / f"rfx_aoi_{area_id}.shp"
             geojson_path = area_dir / f"rfx_aoi_{area_id}.geojson"
-            gdf_wgs.to_file(shp_path, driver="ESRI Shapefile", encoding="utf-8")
-            gdf_wgs.to_file(geojson_path, driver="GeoJSON")
+
+            gdf_wgs_full = gdf_poly.to_crs("EPSG:4326")
+            if is_user_footprints:
+                # Preserve the user's exact building footprints & attributes losslessly in GPKG
+                user_fp_path = area_dir / f"rfx_user_footprints_{area_id}.gpkg"
+                gdf_wgs_full.to_file(user_fp_path, driver="GPKG")
+
+                # Build a clean outer boundary envelope for map display & AOI extent
+                minx, miny, maxx, maxy = [float(b) for b in gdf_wgs_full.total_bounds]
+                utm_crs = infer_utm_epsg_from_lonlat(0.5 * (minx + maxx), 0.5 * (miny + maxy))
+                hull_utm = gdf_wgs_full.to_crs(utm_crs).geometry.unary_union.convex_hull.buffer(10.0)
+                hull_wgs = gpd.GeoSeries([hull_utm], crs=utm_crs).to_crs("EPSG:4326").iloc[0]
+                env_gdf = gpd.GeoDataFrame(
+                    {"area_id": [area_id], "name": [name]},
+                    geometry=[hull_wgs],
+                    crs="EPSG:4326",
+                )
+                env_gdf.to_file(shp_path, driver="ESRI Shapefile", encoding="utf-8")
+                env_gdf.to_file(geojson_path, driver="GeoJSON")
+            else:
+                gdf_wgs = gdf_wgs_full[["geometry"]].copy()
+                gdf_wgs["area_id"] = area_id
+                gdf_wgs["name"] = name
+                gdf_wgs.to_file(shp_path, driver="ESRI Shapefile", encoding="utf-8")
+                gdf_wgs.to_file(geojson_path, driver="GeoJSON")
 
         return self._finalize_area_creation(
             area_id=area_id,
@@ -310,6 +368,8 @@ class AreaRegistry:
             imagery_gsd_m=imagery_gsd_m,
             dsm_resolution_m=dsm_resolution_m,
             min_building_area_m2=min_building_area_m2,
+            footprint_mode=eff_mode,
+            user_footprints_path=user_fp_path,
         )
 
     def _finalize_area_creation(
@@ -325,6 +385,8 @@ class AreaRegistry:
         imagery_gsd_m: float,
         dsm_resolution_m: float,
         min_building_area_m2: float,
+        footprint_mode: str = "auto",
+        user_footprints_path: Optional[Path] = None,
     ) -> Dict[str, Any]:
         meta = self._extract_boundary_metadata(boundary_path)
         db_root = AREAS_DB_DIR / area_id
@@ -348,6 +410,8 @@ class AreaRegistry:
             "area_types": area_types or ["mixed_urban"],
             "traits": traits,
             "aoi_path": to_project_relative_posix(boundary_path),
+            "footprint_mode": footprint_mode,
+            "user_footprints_path": to_project_relative_posix(user_footprints_path) if user_footprints_path else None,
             "db_root": to_project_relative_posix(db_root),
             "postgis_schema": f"rfx_{area_id}",
             "cv_profile": chosen_profile,
@@ -360,8 +424,9 @@ class AreaRegistry:
         data = self._load_raw()
         data[area_id] = record
         self._save_raw(data)
+        mode_note = "USER_FOOTPRINTS+WFS_HEIGHTS" if footprint_mode == "user_footprints" else "WFS_DIRECT"
         studio_logger.success(
-            f"Registered new area '{name}' ({area_id}, {meta['area_km2']:.2f} km², CRS={meta['target_crs']}, CV profile={chosen_profile})",
+            f"Registered new area '{name}' ({area_id}, {meta['area_km2']:.2f} km², mode={mode_note}, CRS={meta['target_crs']}, CV profile={chosen_profile})",
             section="AREA_MANAGER",
             area_id=area_id,
         )

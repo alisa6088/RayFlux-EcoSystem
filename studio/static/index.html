@@ -158,11 +158,19 @@
                 <input type="text" id="newAreaName" placeholder="e.g. North Industrial Zone" />
               </div>
               <div class="form-row">
-                <label>Draw on Map OR Upload Boundary</label>
+                <label>Draw on Map OR Upload Footprints / Boundary</label>
                 <div style="font-size:11.5px;color:#94a3b8;line-height:1.4;">
-                  Use the <b>Polygon / Rectangle tool</b> on the top-left of the map to draw, OR upload `.zip` / `.shp` / `.geojson` / `.gpkg`:
+                  Draw a study boundary on the map, OR upload `.zip` / `.shp` / `.geojson` / `.gpkg`. If you upload building footprints, Section 1 keeps your exact footprints and transfers 3D heights from overlapping global 3D buildings:
                 </div>
                 <input type="file" id="newAreaFiles" multiple accept=".shp,.dbf,.shx,.prj,.cpg,.geojson,.json,.gpkg,.zip" onchange="previewUploadedGeoJson()" style="margin-top:6px;font-size:11.5px;" />
+                <div style="margin-top:6px;">
+                  <label style="font-size:11px;color:#94a3b8;margin-bottom:3px;display:block;">Uploaded Shapefile / GeoJSON Role</label>
+                  <select id="newAreaFootprintMode" style="font-size:11.5px;">
+                    <option value="auto" selected>Auto-Detect (Multi-Polygon = My Footprints + WFS Heights)</option>
+                    <option value="user_footprints">User Building Footprints (Keep My Shapes + WFS Overlap Heights)</option>
+                    <option value="wfs_only">AOI Boundary Only (Download Footprints + Heights from WFS)</option>
+                  </select>
+                </div>
                 <div class="flex-row" style="margin-top:6px;">
                   <div id="drawnStatusBadge" class="pill pill-info" style="display:none;">Input polygon ready</div>
                   <button class="btn btn-sm" id="btnTogglePolyVis" onclick="toggleInputPolygonButton()" style="display:none;">Hide Polygon</button>

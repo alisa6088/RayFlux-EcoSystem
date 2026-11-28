@@ -129,11 +129,25 @@ When executed with `--area-id <area_id>` (or via RayFlux Studio), `EcosystemConf
 
 ## 5. Processing Stages & Scientific Algorithms
 
-### 5.1 Stage 1 — 3D LoD1 Building Footprint Harvesting (`footprint_harvester.py`)
+### 5.1 Stage 1 — 3D LoD1 Building Footprint Harvesting OR User Footprints + WFS Overlap Height Transfer (`footprint_harvester.py`)
+
+Section 1 supports **two operating modes** (`footprint_mode: "auto" | "user_footprints" | "wfs_only"`):
+
+#### Mode A: User Building Footprints + WFS Overlap Height Transfer (Default when uploading multi-polygon `.shp`/`.geojson`/`.gpkg` or `--footprint-mode user_footprints`)
+Global open 3D building datasets can contain positional shifts, merged blocks, or street-overlapping footprints. When you supply your own accurate building footprints (`.shp`, `.geojson`, `.gpkg`, or `.zip` via CLI or RayFlux Studio):
+1. **Exact Geometry Preservation:** Every user building polygon is topologically healed (`make_valid().buffer(0)`), reprojected to `aoi.target_crs`, and preserved **as-is** (dropping only degenerate `< 1 m²` slivers).
+2. **Spatial Overlap Height Transfer from Global 3D LoD1 WFS:** Section 1 queries the TUM 3D LoD1 WFS service across the AOI and executes a vectorized R-tree spatial join (`gpd.sjoin(..., predicate="intersects")`) to compute exact geometric intersection areas $A_{\text{ov}}(i, j) = \text{Area}(U_i \cap W_j)$:
+   - **Tier 1 — Direct Spatial Overlap (`WFS_OVERLAP`):** Selects the dominant overlapping WFS building ($j^* = \arg\max_j A_{\text{ov}}(i, j)$) and transfers its exact `building_height_m` and `height_variance` onto the user's clean footprint, recording `wfs_overlap_pct` ($0\text{–}100\%$).
+   - **Tier 2 — Shift-Tolerance Nearest Match (`WFS_NEAREST`):** If a user building has zero direct overlap due to minor WFS positional shift, checks `sjoin_nearest(max_distance = 5.0 m)` to recover the adjacent WFS height.
+   - **Tier 3 — User Attribute Fallback (`USER_ATTR`):** If no WFS building exists nearby, inspects optional numeric height/floor attributes in the user's file (`height`, `building_height_m`, `floors`, etc.).
+   - **Tier 4 — Default Fallback (`DEFAULT_FALLBACK`):** Falls back to `default_building_height_m` (`9.6 m`).
+3. **Downstream Alignment:** Because the Synthetic DSM (Stage 2) and Section 2/3 pipelines consume `s01_building_footprints`, the `0.50 m` DSM, CV obstacle crops, and PV yield maps automatically inherit the **exact user building footprints** paired with **3D WFS heights**.
+
+#### Mode B: WFS Direct Mode (`wfs_only` or single-polygon AOI boundary)
 1. **Automatic Session Token Management:** Calls `GET /viewer-session`, tracks token expiry (`expiresInSeconds = 900`) and request quota (`maxWfsRequests = 200`), and auto-renews on `HTTP 401/403`.
 2. **Safe Grid Subdivision:** Splits the AOI into $0.04^\circ \times 0.04^\circ$ tiles ($\approx 4.4\text{ km} \times 4.4\text{ km}$) to avoid server-side `BBOX_TOO_LARGE` rejections.
 3. **Cross-Tile Deduplication & Topological Healing:** Deduplicates edge features by global feature ID (`id` / `ogc_fid`), reprojects to `aoi.target_crs`, repairs invalid rings via `make_valid(geom).buffer(0)`, clips to `aoi.boundary_utm`, and filters out polygons smaller than `min_building_area_m2` (default `50.0 m²`).
-4. **3D Attributes & Immutable Primary Key:** Extracts `building_height_m` (clamped $\ge 2.5\text{ m}$, fallback `9.6 m`), `height_variance`, and `num_floors = max(1, round(building_height_m / 3.2))`. Sorts deterministically North-to-South (`centroid_y_utm` descending) then West-to-East (`centroid_x_utm` ascending) and assigns immutable `building_id = 1..N`.
+4. **3D Attributes & Immutable Primary Key:** Extracts `building_height_m` (clamped $\ge 2.5\text{ m}$, fallback `9.6 m`), `height_variance`, `height_source = "WFS_DIRECT"`, and `num_floors = max(1, round(building_height_m / 3.2))`. Sorts deterministically North-to-South (`centroid_y_utm` descending) then West-to-East (`centroid_x_utm` ascending) and assigns immutable `building_id = 1..N`.
 
 ### 5.2 Stage 2 — Building-Only Synthetic DSM (`synthetic_dsm_builder.py`)
 Rasterizes validated 3D building polygons directly onto a flat $0.0\text{ m}$ ground reference grid at `dsm_resolution_m = 0.50 m`:
@@ -193,6 +207,8 @@ Opens each GeoTIFF with `rasterio`, validates readable dimensions, bands, dtype,
 | `gross_area_m2` | `gross_area` | `float64` | $\text{m}^2$ | Topologically valid 2D building footprint area in metric UTM. |
 | `building_height_m` | `height_m` | `float64` | $\text{m}$ | 3D structural roof height above ground ($\ge 2.5\text{ m}$). |
 | `height_variance` | `height_var` | `float64` | $\text{m}^2$ | Roof height variance from 3D LoD1 model (`0.0` if flat/uniform). |
+| `height_source` | `h_source` | `str` | — | Provenance: `WFS_OVERLAP`, `WFS_NEAREST`, `USER_ATTR`, `DEFAULT_FALLBACK`, or `WFS_DIRECT`. |
+| `wfs_overlap_pct` | `wfs_ov_pct` | `float64` | `%` | Percentage of user footprint overlapped by the matched WFS 3D building (`100.0` in WFS Direct mode). |
 | `num_floors` | `floors` | `int32` | count | Estimated building stories ($\max(1, \text{round}(\text{height\_m}/3.2))$). |
 | `centroid_x_utm` | `cx_utm` | `float64` | $\text{m}$ | Building centroid Easting in `target_crs`. |
 | `centroid_y_utm` | `cy_utm` | `float64` | $\text{m}$ | Building centroid Northing in `target_crs`. |
@@ -255,6 +271,9 @@ gdf = gpd.read_postgis(
 | Parameter (`EcosystemConfig`) | CLI Flag (`run_ecosystem.py`) | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `aoi_source` | `--aoi` | `data/case_study_aoi/rfx_aoi_boundary.shp` | Path to `.shp`/`.geojson`/`.gpkg` or `"west,south,east,north"` bbox. |
+| `footprint_mode` | `--footprint-mode` | `"auto"` | `"auto"` (multi-polygon file = user footprints + WFS overlap heights; single polygon = AOI boundary), `"user_footprints"`, or `"wfs_only"`. |
+| `user_footprints_source` | `--user-footprints` | `None` | Optional explicit path to user building footprints when `--aoi` is a separate boundary polygon. |
+| `wfs_height_nearest_max_m` | — | `5.0` | Shift-tolerance nearest-neighbor radius ($\text{m}$) if a user footprint has zero direct WFS overlap. |
 | `aoi_buffer_m` | — | `15.0` | Metric buffer ($\text{m}$) around AOI before DSM/ortho extraction. |
 | `target_crs` | — | `"EPSG:32639"` (or `None` auto-UTM) | Unified metric UTM CRS for all vector and raster outputs. |
 | `min_building_area_m2` | `--min-area` | `50.0` | Minimum footprint area ($\text{m}^2$) to retain. |

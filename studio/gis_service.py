@@ -70,6 +70,7 @@ def get_all_area_boundaries_geojson() -> Dict[str, Any]:
                     "area_types": ", ".join(area.get("area_types", [])),
                     "area_km2": area.get("area_km2", 0.0),
                     "target_crs": area.get("target_crs", ""),
+                    "footprint_mode": area.get("footprint_mode", "wfs_only"),
                     "buildings_count": area["section_status"]["buildings_count"],
                     "s1": area["section_status"]["section1"],
                     "s2": area["section_status"]["section2"],
@@ -110,7 +111,7 @@ def get_area_vector_geojson(
     # Keep only concise popup attributes for crisp browser rendering speed
     keep_cols = [
         c for c in [
-            "building_id", "gross_area_m2", "building_height_m", "num_floors",
+            "building_id", "gross_area_m2", "building_height_m", "height_source", "wfs_overlap_pct", "num_floors",
             "usable_area_m2", "usable_area_pct", "obstacle_area_m2", "obstacle_count",
             "cast_shadow_area_m2", "suitability_status", "obj_class", "area_m2", "conf",
             "mean_kwh_m2_yr", "mean_svf", "mean_shadow_pct", "installed_capacity_kwp",
